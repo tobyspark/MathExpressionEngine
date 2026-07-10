@@ -17,7 +17,8 @@ inferred. Example — a procedural array of transforms for an instanced mesh:
 [ translate(vec3(i, 0, 0)) * rotateY(i * spacing) for i in 0..<n ]
 ```
 
-See **[DESIGN.md](DESIGN.md)** for goal, present reality, and future steps.
+- **[GUIDE.md](GUIDE.md)** — the expression language for end-users (tutorial + function reference).
+- **[DESIGN.md](DESIGN.md)** — goal, present reality, and future steps (for contributors).
 
 ## Layout
 
