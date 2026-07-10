@@ -20,6 +20,7 @@ extension EngineValue {
         case .vec2(let v):  return SIMD4(v.x, v.y, 0, 0)
         case .vec3(let v):  return SIMD4(v.x, v.y, v.z, 0)
         case .vec4(let v):  return v
+        case .array:        return SIMD4()   // arrays don't take part in lane ops (sema prevents)
         }
     }
 

@@ -51,6 +51,41 @@ enum ReferenceInterpreter {
             let i3 = idx.count > 3 ? idx[3] : 0
             return EngineValue.swizzle(v, i0, i1, i2, i3, count: idx.count)
 
+        case .arrayLiteral(let elements, _):
+            var els: [EngineValue] = []
+            els.reserveCapacity(elements.count)
+            for el in elements { els.append(try eval(el, inputs, locals)) }
+            return .array(els)
+
+        case .index(let base, let idx, _):
+            let b = try eval(base, inputs, locals)
+            let iVal = try eval(idx, inputs, locals)
+            let els = b.arrayElements ?? []
+            let k = Int(iVal.scalar.rounded(.down))
+            guard k >= 0, k < els.count else { throw EvalError.indexOutOfBounds(index: k, count: els.count) }
+            return els[k]
+
+        case .comprehension(let bodyExpr, let loopVar, let lo, let hi, let inclusive, _):
+            let loV = try eval(lo, inputs, locals).scalar
+            let hiV = try eval(hi, inputs, locals).scalar
+            let start = Int(loV.rounded(.down))
+            let endExclusive = inclusive ? Int(hiV.rounded(.down)) + 1 : Int(hiV.rounded(.down))
+            let count = endExclusive - start
+            if count <= 0 { return .array([]) }
+            guard count <= EngineLimits.maxArrayElements else {
+                throw EvalError.limitExceeded("comprehension produced \(count) elements (max \(EngineLimits.maxArrayElements))")
+            }
+            var els: [EngineValue] = []
+            els.reserveCapacity(count)
+            var scoped = locals
+            var k = start
+            while k < endExclusive {
+                scoped[loopVar] = .float(Float(k))
+                els.append(try eval(bodyExpr, inputs, scoped))
+                k += 1
+            }
+            return .array(els)
+
         case .call(let name, let args, _):
             var vs: [EngineValue] = []
             vs.reserveCapacity(args.count)

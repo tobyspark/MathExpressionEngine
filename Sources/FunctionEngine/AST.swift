@@ -17,7 +17,10 @@ indirect enum Expr: Sendable {
     case call(String, [Expr], Span)
     case negate(Expr, Span)
     case binary(BinaryOp, Expr, Expr, Span)
-    case swizzle(Expr, String, Span)   // base.chars, e.g. p.xyz
+    case swizzle(Expr, String, Span)              // base.chars, e.g. p.xyz
+    case arrayLiteral([Expr], Span)               // [a, b, c]
+    case index(Expr, Expr, Span)                  // base[index]
+    case comprehension(body: Expr, loopVar: String, lo: Expr, hi: Expr, inclusive: Bool, Span)  // [body for i in lo..<hi]
 
     var span: Span {
         switch self {
@@ -26,7 +29,10 @@ indirect enum Expr: Sendable {
              .call(_, _, let s),
              .negate(_, let s),
              .binary(_, _, _, let s),
-             .swizzle(_, _, let s):
+             .swizzle(_, _, let s),
+             .arrayLiteral(_, let s),
+             .index(_, _, let s),
+             .comprehension(_, _, _, _, _, let s):
             return s
         }
     }

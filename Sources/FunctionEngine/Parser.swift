@@ -183,22 +183,106 @@ struct Parser {
         return base
     }
 
-    // Postfix: primary followed by any number of `.swizzle` accesses.
+    // Postfix: primary followed by any number of `.swizzle` or `[index]` accesses.
     private mutating func parsePostfix() -> Expr? {
         guard var expr = parsePrimary() else { return nil }
-        while case .dot = current.kind {
-            advance()
-            guard case .identifier(let chars) = current.kind else {
-                diagnostics.append(Diagnostic(code: .badSwizzle, severity: .error,
-                                              message: "Expected a swizzle like `.x` or `.xyz` after `.`.",
-                                              span: current.span))
-                return nil
+        while true {
+            if case .dot = current.kind {
+                advance()
+                guard case .identifier(let chars) = current.kind else {
+                    diagnostics.append(Diagnostic(code: .badSwizzle, severity: .error,
+                                                  message: "Expected a swizzle like `.x` or `.xyz` after `.`.",
+                                                  span: current.span))
+                    return nil
+                }
+                let span = merge(expr.span, current.span)
+                advance()
+                expr = .swizzle(expr, chars, span)
+            } else if case .lbracket = current.kind {
+                advance()
+                guard let idx = parseAdditive() else { return nil }
+                guard case .rbracket = current.kind else {
+                    diagnostics.append(Diagnostic(code: .unmatchedParen, severity: .error,
+                                                  message: "Expected `]` to close the index.", span: current.span))
+                    return nil
+                }
+                let span = merge(expr.span, current.span)
+                advance()
+                expr = .index(expr, idx, span)
+            } else {
+                break
             }
-            let span = merge(expr.span, current.span)
-            advance()
-            expr = .swizzle(expr, chars, span)
         }
         return expr
+    }
+
+    /// `[` … `]` — an array literal `[a, b, c]` or a comprehension
+    /// `[body for i in lo..<hi]`.
+    private mutating func parseBracketed() -> Expr? {
+        let startSpan = current.span
+        advance()   // consume `[`
+
+        if case .rbracket = current.kind {
+            diagnostics.append(Diagnostic(code: .emptyArray, severity: .error,
+                                          message: "An empty array `[]` has no element type — add at least one element.",
+                                          span: startSpan))
+            return nil
+        }
+
+        guard let first = parseAdditive() else { return nil }
+
+        // Comprehension: `[ body for i in lo (.. | ..<) hi ]`
+        if case .identifier("for") = current.kind {
+            advance()
+            guard case .identifier(let loopVar) = current.kind else {
+                diagnostics.append(Diagnostic(code: .expectedName, severity: .error,
+                                              message: "Expected a loop variable after `for`.", span: current.span))
+                return nil
+            }
+            advance()
+            guard case .identifier("in") = current.kind else {
+                diagnostics.append(Diagnostic(code: .expectedName, severity: .error,
+                                              message: "Expected `in` after the loop variable.", span: current.span))
+                return nil
+            }
+            advance()
+            guard let lo = parseAdditive() else { return nil }
+
+            let inclusive: Bool
+            if case .dotDotLess = current.kind { inclusive = false; advance() }
+            else if case .dotDot = current.kind { inclusive = true; advance() }
+            else {
+                diagnostics.append(Diagnostic(code: .expectedRange, severity: .error,
+                                              message: "Expected `..` or `..<` in the comprehension range.", span: current.span))
+                return nil
+            }
+
+            guard let hi = parseAdditive() else { return nil }
+            guard case .rbracket = current.kind else {
+                diagnostics.append(Diagnostic(code: .unmatchedParen, severity: .error,
+                                              message: "Expected `]` to close the comprehension.", span: current.span))
+                return nil
+            }
+            let span = merge(startSpan, current.span)
+            advance()
+            return .comprehension(body: first, loopVar: loopVar, lo: lo, hi: hi, inclusive: inclusive, span)
+        }
+
+        // Array literal: `[ first (, expr)* ]`
+        var elements = [first]
+        while case .comma = current.kind {
+            advance()
+            guard let e = parseAdditive() else { return nil }
+            elements.append(e)
+        }
+        guard case .rbracket = current.kind else {
+            diagnostics.append(Diagnostic(code: .unmatchedParen, severity: .error,
+                                          message: "Expected `]` to close the array.", span: current.span))
+            return nil
+        }
+        let span = merge(startSpan, current.span)
+        advance()
+        return .arrayLiteral(elements, span)
     }
 
     private mutating func parsePrimary() -> Expr? {
@@ -244,6 +328,9 @@ struct Parser {
             advance()
             return inner
 
+        case .lbracket:
+            return parseBracketed()
+
         case .eof:
             diagnostics.append(Diagnostic(code: .incompleteExpression, severity: .error,
                                           message: "The expression is incomplete.", span: current.span))
@@ -286,6 +373,10 @@ private func describe(_ t: Token) -> String {
     case .equals:            return "="
     case .semicolon:         return ";"
     case .dot:               return "."
+    case .lbracket:          return "["
+    case .rbracket:          return "]"
+    case .dotDot:            return ".."
+    case .dotDotLess:        return "..<"
     case .eof:               return "end of input"
     }
 }

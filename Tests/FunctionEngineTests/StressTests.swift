@@ -1,16 +1,14 @@
 import Testing
 @testable import FunctionEngine
 
-// Stress the zero-allocation eval path: many evaluations across expressions with
-// differing register counts, each checked against the reference interpreter.
-// This exercises the `withUnsafeTemporaryAllocation` scratch logic (input/register
-// indexing, bail-on-missing) under load and guards the unsafe code's correctness.
+// Stress the eval path: many evaluations across expressions with differing
+// register counts, each checked against the reference interpreter — guarding the
+// register-machine execution (indexing, missing-input bail) under load.
 //
-// Note: a *strict* "zero heap allocation per eval" assertion needs Instruments /
-// a malloc-count harness (macOS; see DESIGN-FunctionNode-Engine.md §11). On the
-// Linux CI we instead prove correctness under heavy load; the zero-alloc property
-// is structural (stack scratch via withUnsafeTemporaryAllocation, no [Float] in
-// the loop).
+// (Since slice 6 the register file is a heap `[EngineValue]` — Option B, unified
+// value type. The earlier stack-scratch/zero-alloc register file can be
+// reintroduced as a scalar/vector fast path behind these same tests; see
+// DESIGN-FunctionNode-Engine.md §9 / the arrays decision.)
 
 @Suite struct StressTests {
 

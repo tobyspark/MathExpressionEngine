@@ -37,6 +37,10 @@ public enum DiagnosticCode: String, Sendable, Equatable {
     case useBeforeDefinition
     case expectedName
     case expectedEquals
+    case emptyArray            // `[]` with no elements (element type can't be inferred)
+    case heterogeneousArray    // array literal with mixed element types
+    case notAnArray            // indexing / reducing a non-array
+    case expectedRange         // comprehension range malformed
 }
 
 public struct Diagnostic: Sendable, Equatable {
@@ -53,8 +57,9 @@ public struct Diagnostic: Sendable, Equatable {
 }
 
 /// The value/port types the engine can produce.
-public enum ValueType: Sendable, Equatable {
+public indirect enum ValueType: Sendable, Equatable {
     case float, vec2, vec3, vec4
+    case array(ValueType)
 
     public var width: Int {
         switch self {
@@ -62,10 +67,18 @@ public enum ValueType: Sendable, Equatable {
         case .vec2:  return 2
         case .vec3:  return 3
         case .vec4:  return 4
+        case .array: return 0
         }
     }
 
-    public var isVector: Bool { self != .float }
+    public var isVector: Bool {
+        switch self { case .vec2, .vec3, .vec4: return true; default: return false }
+    }
+
+    public var elementType: ValueType? {
+        if case .array(let t) = self { return t } else { return nil }
+    }
+    public var isArray: Bool { elementType != nil }
 
     public var name: String {
         switch self {
@@ -73,6 +86,7 @@ public enum ValueType: Sendable, Equatable {
         case .vec2:  return "vec2"
         case .vec3:  return "vec3"
         case .vec4:  return "vec4"
+        case .array(let t): return "\(t.name)[]"
         }
     }
 
@@ -87,12 +101,14 @@ public enum ValueType: Sendable, Equatable {
     }
 }
 
-/// A typed value the engine produces. Trivial (SIMD payloads) — no heap, no ARC.
+/// A typed value the engine produces. Scalars/vectors are trivial (SIMD
+/// payloads); `.array` is heap-backed.
 public enum EngineValue: Sendable, Equatable {
     case float(Float)
     case vec2(SIMD2<Float>)
     case vec3(SIMD3<Float>)
     case vec4(SIMD4<Float>)
+    case array([EngineValue])
 
     public var type: ValueType {
         switch self {
@@ -100,27 +116,37 @@ public enum EngineValue: Sendable, Equatable {
         case .vec2:  return .vec2
         case .vec3:  return .vec3
         case .vec4:  return .vec4
+        case .array(let els): return .array(els.first?.type ?? .float)
         }
     }
 
-    /// The scalar value (float) or the first component (vectors).
+    /// The scalar value (float), the first component (vectors), or the first
+    /// element's scalar (arrays).
     public var scalar: Float {
         switch self {
         case .float(let x): return x
         case .vec2(let v):  return v.x
         case .vec3(let v):  return v.x
         case .vec4(let v):  return v.x
+        case .array(let els): return els.first?.scalar ?? 0
         }
     }
 
-    /// Components as a `[Float]` (length == type.width).
+    /// Components as a `[Float]` (vectors), `[x]` (float), or per-element scalars
+    /// (arrays).
     public var components: [Float] {
         switch self {
         case .float(let x): return [x]
         case .vec2(let v):  return [v.x, v.y]
         case .vec3(let v):  return [v.x, v.y, v.z]
         case .vec4(let v):  return [v.x, v.y, v.z, v.w]
+        case .array(let els): return els.map(\.scalar)
         }
+    }
+
+    /// The elements of an array value (nil for scalars/vectors).
+    public var arrayElements: [EngineValue]? {
+        if case .array(let els) = self { return els } else { return nil }
     }
 }
 
@@ -154,6 +180,8 @@ public struct Interface: Sendable, Equatable {
 public enum EvalError: Error, Equatable, Sendable {
     case notCompiled
     case missingInput(String)
+    case indexOutOfBounds(index: Int, count: Int)
+    case limitExceeded(String)
 }
 
 /// A compiled program: its derived interface, any diagnostics, and — when it

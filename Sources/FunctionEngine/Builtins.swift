@@ -19,6 +19,7 @@ enum FnID: Sendable {
     case atan2, pow, min, max, mod, step
     case clamp, mix, smoothstep
     case length, distance, dot, cross, normalize
+    case sum, product, mean, count
 }
 
 enum Builtins {
@@ -38,7 +39,11 @@ enum Builtins {
         "atan2": 2, "pow": 2, "min": 2, "max": 2, "mod": 2, "step": 2,
         "clamp": 3, "mix": 3, "smoothstep": 3,
         "length": 1, "distance": 2, "dot": 2, "cross": 2, "normalize": 1,
+        "sum": 1, "product": 1, "mean": 1, "count": 1,
     ]
+
+    /// Array reduction functions.
+    static let reductions: Set<String> = ["sum", "product", "mean", "count"]
 
     /// Componentwise unary math functions (`genN → genN`).
     static let genNUnary: Set<String> = [
@@ -91,6 +96,10 @@ enum Builtins {
         case "dot": return .dot
         case "cross": return .cross
         case "normalize": return .normalize
+        case "sum": return .sum
+        case "product": return .product
+        case "mean": return .mean
+        case "count": return .count
         default: return nil
         }
     }
@@ -130,8 +139,9 @@ enum Builtins {
         case .smoothstep:
             let t = Swift.min(Swift.max((a2 - a0) / (a1 - a0), 0), 1)
             return t * t * (3 - 2 * t)
-        // Vector-only ids never reach the scalar path.
-        case .length, .distance, .dot, .cross, .normalize:
+        // Vector-/array-only ids never reach the scalar path.
+        case .length, .distance, .dot, .cross, .normalize,
+             .sum, .product, .mean, .count:
             return .nan
         }
     }
@@ -153,6 +163,15 @@ enum Builtins {
         case .dot:       return .float(EngineValue.dot(a0, a1))
         case .cross:     return EngineValue.cross(a0, a1)
         case .normalize: return EngineValue.binary(.div, a0, .float(EngineValue.length(a0)))
+        case .count:
+            return .float(Float(a0.arrayElements?.count ?? 0))
+        case .sum, .product, .mean:
+            guard let els = a0.arrayElements, !els.isEmpty else { return .float(0) }
+            var acc = els[0]
+            let op: BinaryOp = (id == .product) ? .mul : .add
+            for k in 1..<els.count { acc = EngineValue.binary(op, acc, els[k]) }
+            if id == .mean { acc = EngineValue.binary(.div, acc, .float(Float(els.count))) }
+            return acc
         case .atan2, .pow, .min, .max, .mod, .step, .clamp, .mix, .smoothstep:
             // Scalar-only multi-arg (this slice): args are floats.
             return .float(evaluate(id, a0.scalar, a1.scalar, a2.scalar))

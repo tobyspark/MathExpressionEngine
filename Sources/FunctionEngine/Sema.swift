@@ -3,9 +3,9 @@
 //  FunctionEngine
 //
 //  Resolution + bottom-up type synthesis over the function body. Variables are
-//  `float` (vector *inputs* need annotation syntax, deferred), so every leaf type
-//  is known and each node synthesizes its result type from its operands — no
-//  unification needed. Reports type errors, derives inputs, and types the outputs.
+//  `float` (vector inputs are deferred), comprehension loop variables are `float`,
+//  so every leaf type is known and each node synthesizes its result type from its
+//  operands. Reports type errors, derives inputs, and types the outputs.
 //
 
 func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) {
@@ -18,7 +18,7 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
         if case .local(let name, _, _) = stmt { letNames.insert(name) }
     }
 
-    var letTypes: [String: ValueType] = [:]   // locals defined so far → type
+    var letTypes: [String: ValueType] = [:]
     var declaredLocals = Set<String>()
     var outputs: [OutputPort] = []
     var outputNamesSeen = Set<String>()
@@ -57,6 +57,13 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
             return nil
         }
 
+        if Builtins.reductions.contains(name) {
+            guard case .array(let elem) = argTypes[0] else {
+                diag(.notAnArray, "`\(name)` expects an array.", span); return nil
+            }
+            return name == "count" ? .float : elem
+        }
+
         switch name {
         case "length":
             guard argTypes[0].isVector else { diag(.typeMismatch, "`length` expects a vector.", span); return nil }
@@ -84,7 +91,7 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
         }
 
         if Builtins.genNUnary.contains(name) {
-            return argTypes[0]   // float→float or vecN→vecN
+            return argTypes[0]
         }
         if Builtins.scalarMulti.contains(name) {
             guard argTypes.allSatisfy({ $0 == .float }) else {
@@ -97,13 +104,14 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
         return nil
     }
 
-    func synthesize(_ e: Expr) -> ValueType? {
+    func synthesize(_ e: Expr, _ scope: [String: ValueType]) -> ValueType? {
         switch e {
         case .number:
             return .float
 
         case .variable(let name, let span):
-            if let t = letTypes[name] { return t }
+            if let t = scope[name] { return t }        // comprehension loop variable
+            if let t = letTypes[name] { return t }     // local
             if letNames.contains(name) {
                 diag(.useBeforeDefinition, "`\(name)` is used before it is defined.", span)
                 return nil
@@ -112,11 +120,16 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
             if inputSeen.insert(name).inserted { inputs.append(name) }
             return .float
 
-        case .negate(let x, _):
-            return synthesize(x)
+        case .negate(let x, let span):
+            guard let t = synthesize(x, scope) else { return nil }
+            guard !t.isArray else { diag(.typeMismatch, "`-` doesn't apply to arrays.", span); return nil }
+            return t
 
         case .binary(let op, let l, let r, let span):
-            guard let lt = synthesize(l), let rt = synthesize(r) else { return nil }
+            guard let lt = synthesize(l, scope), let rt = synthesize(r, scope) else { return nil }
+            guard !lt.isArray, !rt.isArray else {
+                diag(.typeMismatch, "`\(opSymbol(op))` doesn't apply to arrays.", span); return nil
+            }
             if lt == rt { return lt }
             if lt == .float { return rt }
             if rt == .float { return lt }
@@ -124,7 +137,7 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
             return nil
 
         case .swizzle(let base, let chars, let span):
-            guard let bt = synthesize(base) else { return nil }
+            guard let bt = synthesize(base, scope) else { return nil }
             guard bt.isVector else {
                 diag(.badSwizzle, "`.\(chars)` can't be applied to a `\(bt.name)` — only vectors have components.", span)
                 return nil
@@ -135,10 +148,49 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
             }
             return ValueType.ofWidth(indices.count)
 
+        case .arrayLiteral(let elements, let span):
+            var elementType: ValueType? = nil
+            for el in elements {
+                guard let t = synthesize(el, scope) else { return nil }
+                if let known = elementType {
+                    if known != t {
+                        diag(.heterogeneousArray, "Array elements must all be the same type — found `\(known.name)` and `\(t.name)`.", span)
+                        return nil
+                    }
+                } else {
+                    elementType = t
+                }
+            }
+            guard let elementType else {
+                diag(.emptyArray, "An empty array has no element type.", span); return nil
+            }
+            return .array(elementType)
+
+        case .index(let base, let idx, let span):
+            guard let bt = synthesize(base, scope) else { return nil }
+            guard let it = synthesize(idx, scope) else { return nil }
+            guard case .array(let elem) = bt else {
+                diag(.notAnArray, "`\(bt.name)` isn't an array, so it can't be indexed.", span); return nil
+            }
+            guard it == .float else {
+                diag(.typeMismatch, "An array index must be a number, got `\(it.name)`.", span); return nil
+            }
+            return elem
+
+        case .comprehension(let bodyExpr, let loopVar, let lo, let hi, _, let span):
+            guard let lt = synthesize(lo, scope), let ht = synthesize(hi, scope) else { return nil }
+            guard lt == .float, ht == .float else {
+                diag(.expectedRange, "A comprehension range must use numbers.", span); return nil
+            }
+            var inner = scope
+            inner[loopVar] = .float
+            guard let bt = synthesize(bodyExpr, inner) else { return nil }
+            return .array(bt)
+
         case .call(let name, let args, let span):
             var argTypes: [ValueType] = []
             for a in args {
-                guard let t = synthesize(a) else { return nil }
+                guard let t = synthesize(a, scope) else { return nil }
                 argTypes.append(t)
             }
             return synthesizeCall(name, argTypes, span)
@@ -148,14 +200,14 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
     for stmt in body.statements {
         switch stmt {
         case .local(let name, let value, let span):
-            let t = synthesize(value)
+            let t = synthesize(value, [:])
             if !declaredLocals.insert(name).inserted {
                 diag(.duplicateBinding, "`\(name)` is already defined.", span)
             }
             letTypes[name] = t ?? .float
 
         case .output(let name, let value, let span):
-            let t = synthesize(value)
+            let t = synthesize(value, [:])
             if !outputNamesSeen.insert(name).inserted {
                 diag(.duplicateOutput, "Two outputs are both named `\(name)`.", span)
             }

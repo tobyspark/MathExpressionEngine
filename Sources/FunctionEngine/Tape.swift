@@ -2,18 +2,19 @@
 //  Tape.swift
 //  FunctionEngine
 //
-//  The flat POD bytecode: a register machine over `EngineValue` registers.
-//  Instructions are trivially-copyable (register/const/input indices, a
-//  payload-free `FnID`, small ints) — no strings/closures/arrays — so `Tape` is
-//  `Sendable` and the eval loop touches no ARC. The register scratch is
-//  stack-allocated (`withUnsafeTemporaryAllocation`), so eval allocates only the
-//  small output array.
-//
-//  (Value math is dynamically dispatched via `EngineValue` for now; a later
-//  slice can monomorphize per sema's static types.)
+//  The bytecode: a register machine over `EngineValue` registers. Scalars/vectors
+//  are trivial; `.array` values are heap-backed, so the register file is a normal
+//  `[EngineValue]` (one allocation per eval) and comprehensions run a nested
+//  sub-tape recursively (Option B — one value type, clarity over a stack-scratch
+//  fast path, which can be reintroduced later behind the same tests).
 //
 
-/// A single instruction. All payloads are trivial → POD / `Sendable`.
+enum EngineLimits {
+    static let maxArrayElements = 1 << 20   // guardrail against runaway comprehensions
+}
+
+/// A single instruction. Scalar/vector ops carry only indices/ids; array ops
+/// carry small arrays (built once at compile — not on the per-eval path).
 enum Instr: Sendable {
     case loadConst(dst: Int, constIndex: Int)
     case loadInput(dst: Int, inputIndex: Int)
@@ -27,6 +28,9 @@ enum Instr: Sendable {
     case construct4(dst: Int, a: Int, b: Int, c: Int, d: Int)
     case splat(dst: Int, src: Int, width: Int)
     case swizzle(dst: Int, src: Int, i0: Int, i1: Int, i2: Int, i3: Int, count: Int)
+    case makeArray(dst: Int, srcs: [Int])
+    case index(dst: Int, base: Int, idx: Int)
+    case comprehension(dst: Int, loopVar: Int, lo: Int, hi: Int, inclusive: Bool, body: [Instr], result: Int)
 }
 
 struct Tape: Sendable {
@@ -117,6 +121,41 @@ private struct Lowerer {
             instructions.append(.swizzle(dst: dst, src: src, i0: i0, i1: i1, i2: i2, i3: i3, count: idx.count))
             return dst
 
+        case .arrayLiteral(let elements, _):
+            let regs = elements.map { lower($0) }
+            let dst = newRegister()
+            instructions.append(.makeArray(dst: dst, srcs: regs))
+            return dst
+
+        case .index(let base, let idx, _):
+            let baseReg = lower(base)
+            let idxReg = lower(idx)
+            let dst = newRegister()
+            instructions.append(.index(dst: dst, base: baseReg, idx: idxReg))
+            return dst
+
+        case .comprehension(let bodyExpr, let loopVar, let lo, let hi, let inclusive, _):
+            let loReg = lower(lo)
+            let hiReg = lower(hi)
+            let loopVarReg = newRegister()
+
+            // Lower the body into a separate instruction list (executed per
+            // iteration). Registers are shared (unique indices), so the body
+            // can reference outer inputs/locals and allocate its own temporaries.
+            let prev = localRegister[loopVar]
+            localRegister[loopVar] = loopVarReg
+            let saved = instructions
+            instructions = []
+            let resultReg = lower(bodyExpr)
+            let bodyInstructions = instructions
+            instructions = saved
+            localRegister[loopVar] = prev
+
+            let dst = newRegister()
+            instructions.append(.comprehension(dst: dst, loopVar: loopVarReg, lo: loReg, hi: hiReg,
+                                               inclusive: inclusive, body: bodyInstructions, result: resultReg))
+            return dst
+
         case .call(let name, let args, _):
             if Builtins.isConstructor(name) {
                 let width = name == "vec2" ? 2 : (name == "vec3" ? 3 : 4)
@@ -165,11 +204,11 @@ func lower(_ body: Body) -> Tape {
 
 // MARK: - Execution
 
-private func executeValues(_ tape: Tape, into r: UnsafeMutableBufferPointer<EngineValue>, base: Int) {
-    for ins in tape.instructions {
+private func executeInstrs(_ instructions: [Instr], _ r: inout [EngineValue], base: Int, constants: [Float]) throws(EvalError) {
+    for ins in instructions {
         switch ins {
         case .loadConst(let dst, let ci):
-            r[base + dst] = .float(tape.constants[ci])
+            r[base + dst] = .float(constants[ci])
         case .loadInput(let dst, let ii):
             r[base + dst] = r[ii]
         case .negate(let dst, let src):
@@ -192,31 +231,60 @@ private func executeValues(_ tape: Tape, into r: UnsafeMutableBufferPointer<Engi
             r[base + dst] = EngineValue.splat(width, r[base + src].scalar)
         case .swizzle(let dst, let src, let i0, let i1, let i2, let i3, let count):
             r[base + dst] = EngineValue.swizzle(r[base + src], i0, i1, i2, i3, count: count)
+
+        case .makeArray(let dst, let srcs):
+            var els: [EngineValue] = []
+            els.reserveCapacity(srcs.count)
+            for s in srcs { els.append(r[base + s]) }
+            r[base + dst] = .array(els)
+
+        case .index(let dst, let baseReg, let idxReg):
+            let els = r[base + baseReg].arrayElements ?? []
+            let k = Int(r[base + idxReg].scalar.rounded(.down))
+            guard k >= 0, k < els.count else { throw EvalError.indexOutOfBounds(index: k, count: els.count) }
+            r[base + dst] = els[k]
+
+        case .comprehension(let dst, let loopVar, let lo, let hi, let inclusive, let body, let result):
+            let loV = r[base + lo].scalar
+            let hiV = r[base + hi].scalar
+            let start = Int(loV.rounded(.down))
+            let endExclusive = inclusive ? Int(hiV.rounded(.down)) + 1 : Int(hiV.rounded(.down))
+            let count = endExclusive - start
+            if count <= 0 {
+                r[base + dst] = .array([])
+            } else {
+                guard count <= EngineLimits.maxArrayElements else {
+                    throw EvalError.limitExceeded("comprehension produced \(count) elements (max \(EngineLimits.maxArrayElements))")
+                }
+                var els: [EngineValue] = []
+                els.reserveCapacity(count)
+                var k = start
+                while k < endExclusive {
+                    r[base + loopVar] = .float(Float(k))
+                    try executeInstrs(body, &r, base: base, constants: constants)
+                    els.append(r[base + result])
+                    k += 1
+                }
+                r[base + dst] = .array(els)
+            }
         }
     }
 }
 
-/// Evaluate all outputs, in source order. The register scratch stays on the
-/// stack; only the returned array allocates.
+/// Evaluate all outputs, in source order.
 func runTapeValues(_ tape: Tape, _ inputs: [String: Float]) throws(EvalError) -> [EngineValue] {
     let inputCount = tape.inputOrder.count
-    let total = inputCount + tape.registerCount
-    var missing: String? = nil
-    var result = [EngineValue](repeating: .float(0), count: tape.outputRegisters.count)
+    var registers = [EngineValue](repeating: .float(0), count: inputCount + tape.registerCount)
 
-    withUnsafeTemporaryAllocation(of: EngineValue.self, capacity: total) { scratch in
-        var i = 0
-        while i < inputCount {
-            let name = tape.inputOrder[i]
-            if let value = inputs[name] { scratch[i] = .float(value) } else { missing = name; return }
-            i += 1
-        }
-        executeValues(tape, into: scratch, base: inputCount)
-        for (k, output) in tape.outputRegisters.enumerated() {
-            result[k] = scratch[inputCount + output.register]
-        }
+    var i = 0
+    while i < inputCount {
+        let name = tape.inputOrder[i]
+        guard let value = inputs[name] else { throw EvalError.missingInput(name) }
+        registers[i] = .float(value)
+        i += 1
     }
 
-    if let missing { throw EvalError.missingInput(missing) }
-    return result
+    try executeInstrs(tape.instructions, &registers, base: inputCount, constants: tape.constants)
+
+    return tape.outputRegisters.map { registers[inputCount + $0.register] }
 }
