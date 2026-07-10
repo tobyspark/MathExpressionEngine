@@ -48,7 +48,7 @@ import Testing
     @Test func comprehensionWithInputs() throws {
         let r = compile("[i * step for i in 0..<count]")
         #expect(r.isValid, "\(r.diagnostics)")
-        #expect(r.interface.inputs.contains("step") && r.interface.inputs.contains("count"))
+        #expect(r.interface.inputNames.contains("step") && r.interface.inputNames.contains("count"))
         #expect(try r.evaluateValue(["step": 10, "count": 3]).arrayElements == [.float(0), .float(10), .float(20)])
     }
 

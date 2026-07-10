@@ -20,6 +20,7 @@ indirect enum Expr: Sendable {
     case arrayLiteral([Expr], Span)               // [a, b, c]
     case index(Expr, Expr, Span)                  // base[index]
     case comprehension(body: Expr, loopVar: String, lo: Expr, hi: Expr, inclusive: Bool, Span)  // [body for i in lo..<hi]
+    case mapComprehension(body: Expr, loopVar: String, source: Expr, Span)                       // [body for p in array]
 
     var span: Span {
         switch self {
@@ -31,7 +32,8 @@ indirect enum Expr: Sendable {
              .swizzle(_, _, let s),
              .arrayLiteral(_, let s),
              .index(_, _, let s),
-             .comprehension(_, _, _, _, _, let s):
+             .comprehension(_, _, _, _, _, let s),
+             .mapComprehension(_, _, _, let s):
             return s
         }
     }
@@ -40,8 +42,9 @@ indirect enum Expr: Sendable {
 /// A statement in the function body. A bare single expression is normalized to
 /// one implicit `.output("result", …)`.
 enum Statement: Sendable {
-    case local(name: String, value: Expr, span: Span)    // `let name = expr`
-    case output(name: String, value: Expr, span: Span)   // `out name = expr` (or implicit result)
+    case input(name: String, type: ValueType, span: Span)  // `in name: Type` (typed input declaration)
+    case local(name: String, value: Expr, span: Span)      // `let name = expr`
+    case output(name: String, value: Expr, span: Span)     // `out name = expr` (or implicit result)
 }
 
 /// The whole function body: statements in source order.

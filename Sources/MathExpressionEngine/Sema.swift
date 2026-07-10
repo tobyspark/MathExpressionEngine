@@ -10,8 +10,22 @@
 
 func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) {
     var diagnostics: [Diagnostic] = []
-    var inputs: [String] = []
+    var inputs: [InputPort] = []
     var inputSeen = Set<String>()
+
+    // Declared inputs (`in name: Type`) — collected first so their types are
+    // known wherever they are used, and registered as ports in declaration order.
+    var declaredInputTypes: [String: ValueType] = [:]
+    for stmt in body.statements {
+        guard case .input(let name, let type, let span) = stmt else { continue }
+        if declaredInputTypes[name] != nil {
+            diagnostics.append(Diagnostic(code: .duplicateBinding, severity: .error,
+                message: "`\(name)` is declared more than once.", span: span))
+            continue
+        }
+        declaredInputTypes[name] = type
+        if inputSeen.insert(name).inserted { inputs.append(InputPort(name: name, type: type)) }
+    }
 
     var letNames = Set<String>()
     for stmt in body.statements {
@@ -170,8 +184,9 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
                 diag(.useBeforeDefinition, "`\(name)` is used before it is defined.", span)
                 return nil
             }
+            if let t = declaredInputTypes[name] { return t }    // declared input
             if Builtins.isConstant(name) { return .float }
-            if inputSeen.insert(name).inserted { inputs.append(name) }
+            if inputSeen.insert(name).inserted { inputs.append(InputPort(name: name, type: .float)) }
             return .float
 
         case .negate(let x, let span):
@@ -259,6 +274,17 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
             guard let bt = synthesize(bodyExpr, inner) else { return nil }
             return .array(bt)
 
+        case .mapComprehension(let bodyExpr, let loopVar, let source, let span):
+            guard let st = synthesize(source, scope) else { return nil }
+            guard case .array(let elem) = st else {
+                diag(.notAnArray, "`for \(loopVar) in …` needs an array to iterate — got `\(st.name)`.", span)
+                return nil
+            }
+            var inner = scope
+            inner[loopVar] = elem
+            guard let bt = synthesize(bodyExpr, inner) else { return nil }
+            return .array(bt)
+
         case .call(let name, let args, let span):
             var argTypes: [ValueType] = []
             for a in args {
@@ -271,6 +297,9 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
 
     for stmt in body.statements {
         switch stmt {
+        case .input:
+            break   // declared inputs were collected in the pre-pass
+
         case .local(let name, let value, let span):
             let t = synthesize(value, [:])
             if !declaredLocals.insert(name).inserted {

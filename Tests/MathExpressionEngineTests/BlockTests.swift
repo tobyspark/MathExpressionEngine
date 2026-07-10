@@ -9,7 +9,7 @@ import Testing
     }
 
     @Test func localsAreNotInputs() {
-        #expect(compile("let d = 2; d * x").interface.inputs == ["x"])
+        #expect(compile("let d = 2; d * x").interface.inputNames == ["x"])
     }
 
     @Test func bareExpressionHasImplicitResultOutput() {
@@ -20,7 +20,7 @@ import Testing
         let r = compile("let s = a + b; out sum = s; out diff = a - b")
         #expect(r.isValid, "\(r.diagnostics)")
         #expect(r.interface.outputNames == ["sum", "diff"])
-        #expect(r.interface.inputs == ["a", "b"])
+        #expect(r.interface.inputNames == ["a", "b"])
         #expect(try r.evaluateAll(["a": 5, "b": 3]) == [8, 2])
     }
 

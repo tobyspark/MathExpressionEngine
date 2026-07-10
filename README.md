@@ -30,5 +30,5 @@ Sources/MathExpressionEngine/
   Tape.swift                 // register-machine bytecode (production)
   Engine.swift               // compile(_:)
 Tests/MathExpressionEngineTests/
-  Evaluation · Interface · Diagnostics · Property · Differential · Stress · Block · Vector · Array · Transform · Hardening
+  Evaluation · Interface · Diagnostics · Property · Differential · Stress · Block · Vector · Array · Transform · Input · Hardening
 ```

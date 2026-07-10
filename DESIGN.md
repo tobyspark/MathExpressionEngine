@@ -36,11 +36,16 @@ Design commitments:
   `conjugate` / `normalize`, and type-directed `*` (matrix·matrix, matrix·vec4,
   quaternion compose, quaternion·vec3). `transform * vec3` is deliberately
   undefined — use `transformPoint` / `transformDir`.
-- **Arrays**: literals `[a, b, c]`, comprehensions `[body for i in lo..<hi]` (and
-  the inclusive `..`), indexing `a[i]`, and reductions `sum` / `product` / `mean` /
-  `count`.
-- **Statements**: `let` locals and multiple named `out` outputs; a bare expression
-  is the implicit `result` output.
+- **Arrays**: literals `[a, b, c]`; comprehensions over a numeric range
+  `[body for i in lo..<hi]` (and the inclusive `..`) or over an array
+  `[body for p in arr]` (the loop variable takes the element type); indexing
+  `a[i]`; and reductions `sum` / `product` / `mean` / `count`.
+- **Inputs**: free identifiers are `float` input ports; `in name: Type` declares a
+  typed input (`vec3`, `transform`, `quat`, `vec3[]`, …). Inference never widens
+  an input beyond `float`, so declaration is the single escape hatch — and the
+  all-scalar default keeps working with no `in` at all.
+- **Statements**: `in` typed-input declarations, `let` locals, and multiple named
+  `out` outputs; a bare expression is the implicit `result` output.
 - **Builtins**: trig, exp/log, rounding, `clamp` / `mix` / `smoothstep`, etc.
   (componentwise over vectors); vector algebra `length` / `dot` / `cross` /
   `normalize` / `distance`; constants `pi` / `tau` / `e`. `^` is exponentiation
@@ -66,7 +71,7 @@ Design commitments:
 
 ### Verification
 
-Eleven test suites: unit tests, interface-as-data checks, per-builtin evaluation
+Twelve test suites: unit tests, interface-as-data checks, per-builtin evaluation
 tables, **differential fuzzing** (bytecode tape versus the reference interpreter
 on randomized well-typed expressions), **metamorphic property tests** (matrix and
 quaternion identities), stress tests, and guardrail tests. Run with `swift test`
@@ -78,18 +83,20 @@ on any Swift 6.1+ toolchain (macOS or Linux).
 func compile(_ source: String) -> CompileResult
 
 // CompileResult
-//   .interface    Interface(inputs: [String], outputs: [OutputPort])
+//   .interface    Interface(inputs: [InputPort], outputs: [OutputPort])
 //   .diagnostics  [Diagnostic] (code, severity, message, span)
 //   .isValid
-//   .evaluateValues(_:) throws(EvalError) -> [EngineValue]
-//   + evaluate / evaluateAll / evaluateValue convenience
+//   .evaluateValues(with: [String: EngineValue]) throws(EvalError) -> [EngineValue]
+//   + [String: Float] conveniences: evaluate / evaluateAll / evaluateValue(s)
 
+// InputPort / OutputPort: (name, type)
 // EngineValue: float | vec2/3/4 | transform(Mat4) | quat(Quat) | array
 // ValueType:   float | vec2/3/4 | transform | quat | array(element)
 ```
 
-Inputs are `Float`-valued; output ports carry the inferred types (float, vector,
-transform, quaternion, or arrays of those).
+Both input and output ports carry inferred/declared types. Supply inputs as typed
+`EngineValue`s via `evaluateValues(with:)`; the `[String: Float]` overloads are a
+convenience for the all-scalar case.
 
 ---
 
@@ -97,22 +104,24 @@ transform, quaternion, or arrays of those).
 
 Roughly in priority order:
 
-1. **Vector and matrix inputs.** Input ports are `Float`-only today; typed
-   vector/transform *inputs* need input-type annotation syntax (for example
-   `in p: vec3`). This enables consuming array/vector inputs, not just generating
-   values.
-2. **More transform math:** general 4×4 `inverse`, spherical-linear interpolation
+1. **Vector/array-aware multi-arg builtins.** `min` / `max` / `clamp` / `mix` /
+   `smoothstep` / `step` are scalar-only today; typed inputs make componentwise
+   versions (and vector reductions like `max` over an array) the obvious next want.
+2. **Direct element+index iteration.** The array comprehension gives either the
+   element (`for p in arr`) or the index (`for i in 0..<count(arr)`); an
+   enumerate-style form yielding both would remove the index/`count` boilerplate.
+3. **More transform math:** general 4×4 `inverse`, spherical-linear interpolation
    (`slerp`), `lookAt`, and Euler-angle quaternion construction.
-3. **Reduced-allocation evaluation:** a stack-allocated register scratch plus an
+4. **Reduced-allocation evaluation:** a stack-allocated register scratch plus an
    out-of-line array store for scalar/vector programs, leaving array-producing
    programs (which must allocate their output anyway) unchanged.
-4. **Type-specialized bytecode** (one instruction variant per resolved type) and,
+5. **Type-specialized bytecode** (one instruction variant per resolved type) and,
    optionally, batched SIMD evaluation of comprehension bodies.
-5. **Fabric node integration:** an adapter between `EngineValue` and the node
+6. **Fabric node integration:** an adapter between `EngineValue` and the node
    port types, dynamic typed ports derived from the compiled interface, document
    serialization, a source editor that renders diagnostics at their `line:column`,
    and migration of existing math-expression nodes. This layer is part of the app,
    not this package.
-6. **Additional polish:** parser error recovery that reports every error in one
+7. **Additional polish:** parser error recovery that reports every error in one
    pass, machine-applyable fix hints on diagnostics, and support for stateful
    (feedback) bindings that persist across evaluations.

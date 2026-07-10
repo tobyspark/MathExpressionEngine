@@ -36,7 +36,7 @@ public func compile(_ source: String) -> CompileResult {
         let tape = lower(body)
         program = Program(
             outputCount: tape.outputRegisters.count,
-            runValues: { @Sendable (inputs: [String: Float]) throws(EvalError) -> [EngineValue] in
+            runValues: { @Sendable (inputs: [String: EngineValue]) throws(EvalError) -> [EngineValue] in
                 try runTapeValues(tape, inputs)
             }
         )
@@ -54,7 +54,7 @@ func compileReferenceInterpreter(_ source: String) -> CompileResult {
     if let body, !diagnostics.contains(where: { $0.severity == .error }) {
         program = Program(
             outputCount: interface.outputs.count,
-            runValues: { @Sendable (inputs: [String: Float]) throws(EvalError) -> [EngineValue] in
+            runValues: { @Sendable (inputs: [String: EngineValue]) throws(EvalError) -> [EngineValue] in
                 try ReferenceInterpreter.evalBody(body, inputs)
             }
         )

@@ -31,6 +31,7 @@ enum Instr: Sendable {
     case makeArray(dst: Int, srcs: [Int])
     case index(dst: Int, base: Int, idx: Int)
     case comprehension(dst: Int, loopVar: Int, lo: Int, hi: Int, inclusive: Bool, body: [Instr], result: Int)
+    case mapComprehension(dst: Int, loopVar: Int, source: Int, body: [Instr], result: Int)
 }
 
 struct Tape: Sendable {
@@ -71,6 +72,8 @@ private struct Lowerer {
         var outputs: [(name: String, register: Int)] = []
         for stmt in body.statements {
             switch stmt {
+            case .input:
+                break   // declared inputs carry no code; loaded by name at eval
             case .local(let name, let value, _):
                 localRegister[name] = lower(value)
             case .output(let name, let value, _):
@@ -154,6 +157,24 @@ private struct Lowerer {
             let dst = newRegister()
             instructions.append(.comprehension(dst: dst, loopVar: loopVarReg, lo: loReg, hi: hiReg,
                                                inclusive: inclusive, body: bodyInstructions, result: resultReg))
+            return dst
+
+        case .mapComprehension(let bodyExpr, let loopVar, let source, _):
+            let sourceReg = lower(source)
+            let loopVarReg = newRegister()
+
+            let prev = localRegister[loopVar]
+            localRegister[loopVar] = loopVarReg
+            let saved = instructions
+            instructions = []
+            let resultReg = lower(bodyExpr)
+            let bodyInstructions = instructions
+            instructions = saved
+            localRegister[loopVar] = prev
+
+            let dst = newRegister()
+            instructions.append(.mapComprehension(dst: dst, loopVar: loopVarReg, source: sourceReg,
+                                                  body: bodyInstructions, result: resultReg))
             return dst
 
         case .call(let name, let args, _):
@@ -270,12 +291,23 @@ private func executeInstrs(_ instructions: [Instr], _ r: inout [EngineValue], ba
                 }
                 r[base + dst] = .array(els)
             }
+
+        case .mapComprehension(let dst, let loopVar, let source, let body, let result):
+            let els = r[base + source].arrayElements ?? []
+            var out: [EngineValue] = []
+            out.reserveCapacity(els.count)
+            for el in els {
+                r[base + loopVar] = el
+                try executeInstrs(body, &r, base: base, constants: constants)
+                out.append(r[base + result])
+            }
+            r[base + dst] = .array(out)
         }
     }
 }
 
 /// Evaluate all outputs, in source order.
-func runTapeValues(_ tape: Tape, _ inputs: [String: Float]) throws(EvalError) -> [EngineValue] {
+func runTapeValues(_ tape: Tape, _ inputs: [String: EngineValue]) throws(EvalError) -> [EngineValue] {
     let inputCount = tape.inputOrder.count
     var registers = [EngineValue](repeating: .float(0), count: inputCount + tape.registerCount)
 
@@ -283,7 +315,7 @@ func runTapeValues(_ tape: Tape, _ inputs: [String: Float]) throws(EvalError) ->
     while i < inputCount {
         let name = tape.inputOrder[i]
         guard let value = inputs[name] else { throw EvalError.missingInput(name) }
-        registers[i] = .float(value)
+        registers[i] = value
         i += 1
     }
 

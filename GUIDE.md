@@ -81,11 +81,69 @@ Numbers can be written as `10`, `2.5`, `.5`, or in scientific form `1e3`, `2.5e-
 ## Inputs, outputs, and locals
 
 **Inputs** appear automatically. Any name you use that isn't a built-in function
-or constant becomes a number input port, in the order it first appears:
+or constant becomes a **number** input port, in the order it first appears:
 
 ```
-a * b + c        // three input ports: a, b, c
+a * b + c        // three number input ports: a, b, c
 ```
+
+When you need an input that's richer than a number — a vector, a transform, or a
+whole array of them — declare its type with `in`:
+
+```
+in center: vec3;
+in p: vec3;
+out offset = p - center       // two vec3 input ports
+```
+
+The rule is simple:
+
+- A name you **don't** declare is a **number** (`float`), exactly as before.
+- A name you **do** declare with `in` has the type you gave it.
+
+So `in` is only for ports that aren't plain numbers — the everyday all-numbers
+case needs no ceremony. The types you can declare are the same ones the language
+uses everywhere: `float`, `vec2`, `vec3`, `vec4`, `transform`, `quat`, and arrays
+like `vec3[]` or `float[]`.
+
+**Taking an array in.** Declare an array input and you can measure, index, and
+loop over it:
+
+```
+in points: vec3[];
+out howMany = count(points);         // number of elements
+out first   = points[0];             // one element by index
+out middle  = mean(points)           // reductions work on it directly
+```
+
+To turn every element into a new array, loop over it with `for … in` — read it as
+"*this value, for each `p` in `points`*". The loop variable takes the array's
+element type (here each `p` is a `vec3`):
+
+```
+in points: vec3[];
+in lift: float;
+out raised = [ p + vec3(0, lift, 0) for p in points ]    // lift every point on Y
+```
+
+```
+in placements: transform[];
+in spin: float;
+out spun = [ rotateY(spin) * m for m in placements ]     // spin each instance
+```
+
+Looping directly gives you the **element**. When you need its **position** —
+to offset by index, or read a second array in step — loop over a range with
+`count` instead and index in:
+
+```
+in placements: transform[];
+out spread = [ translate(vec3(i, 0, 0)) * placements[i] for i in 0..<count(placements) ]
+```
+
+Reading past the end of an incoming array is reported as an *"index out of
+bounds"* error — its length comes from whatever is wired in, so it's only known
+while the node runs.
 
 **Outputs** are what the node produces. You have three ways to declare them:
 
@@ -278,6 +336,15 @@ The loop variable (`i` above) is a number you can use anywhere in the body:
 // `count` points evenly around a circle
 ```
 
+A comprehension can also loop over an **existing array** instead of a range —
+`for p in arr` — binding each element in turn (see
+[Taking an array in](#inputs-outputs-and-locals)). The range form gives you the
+position `i`; the array form gives you the element `p`.
+
+```
+[ n * n for n in [1, 2, 3, 4] ]      // 1, 4, 9, 16
+```
+
 **Read** an element by index with `[...]` (indices start at `0`):
 
 ```
@@ -425,9 +492,9 @@ absurdly deep.
 
 The language is deliberately small. Things that are **not** in it (yet):
 
-- **Input ports are always numbers.** You can *produce* vectors, transforms, and
-  arrays, but every input port the node grows is a single `float`. Build vectors
-  inside the expression from number inputs (`vec3(x, y, z)`).
+- **Undeclared inputs are numbers.** A bare name is always a `float` — to take in
+  a vector, transform, or array, declare it with `in name: Type` (see
+  [Inputs](#inputs-outputs-and-locals)).
 - **No `if` / conditionals, comparisons, or booleans.** Reach for `step`,
   `clamp`, `mix`, and `smoothstep` to get branch-like behaviour smoothly.
 - **A few multi-argument maths functions are numbers-only** right now — `min`,

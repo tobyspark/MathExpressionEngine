@@ -13,7 +13,7 @@ struct Token: Equatable {
         case plus, minus, star, slash, percent, caret
         case lparen, rparen, comma
         case lbracket, rbracket
-        case equals, semicolon, dot
+        case equals, semicolon, dot, colon
         case dotDot, dotDotLess          // ..  and  ..<
         case eof
     }
@@ -119,6 +119,7 @@ struct Lexer {
             case "=": kind = .equals
             case ";": kind = .semicolon
             case ".": kind = .dot
+            case ":": kind = .colon
             default:  kind = nil
             }
             if let kind {

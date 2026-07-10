@@ -36,6 +36,8 @@ public enum DiagnosticCode: String, Sendable, Equatable {
     case useBeforeDefinition
     case expectedName
     case expectedEquals
+    case expectedColon         // missing `:` in an `in name: Type` declaration
+    case unknownType           // a type annotation names a type that doesn't exist
     case emptyArray            // `[]` with no elements (element type can't be inferred)
     case heterogeneousArray    // array literal with mixed element types
     case notAnArray            // indexing / reducing a non-array
@@ -167,6 +169,17 @@ public enum EngineValue: Sendable, Equatable {
     }
 }
 
+/// A named, typed input port derived from the expression. Free identifiers are
+/// `float`; an `in name: Type` declaration gives the named port that type.
+public struct InputPort: Sendable, Equatable {
+    public let name: String
+    public let type: ValueType
+    public init(name: String, type: ValueType) {
+        self.name = name
+        self.type = type
+    }
+}
+
 /// A named, typed output port derived from the expression.
 public struct OutputPort: Sendable, Equatable {
     public let name: String
@@ -177,19 +190,21 @@ public struct OutputPort: Sendable, Equatable {
     }
 }
 
-/// The node interface *derived from the expression*. `inputs` are the free
-/// identifiers in first-appearance order (all `float`; deduplicated,
-/// constants and locals excluded). `outputs` are the `out` declarations in source
-/// order (types inferred), or a single implicit `result`.
+/// The node interface *derived from the expression*. `inputs` are the ports the
+/// expression consumes: every `in name: Type` declaration (in declaration order),
+/// followed by the remaining free identifiers in first-appearance order (typed
+/// `float`; deduplicated, constants and locals excluded). `outputs` are the `out`
+/// declarations in source order (types inferred), or a single implicit `result`.
 public struct Interface: Sendable, Equatable {
-    public let inputs: [String]
+    public let inputs: [InputPort]
     public let outputs: [OutputPort]
 
-    public init(inputs: [String], outputs: [OutputPort]) {
+    public init(inputs: [InputPort], outputs: [OutputPort]) {
         self.inputs = inputs
         self.outputs = outputs
     }
 
+    public var inputNames: [String] { inputs.map(\.name) }
     public var outputType: ValueType { outputs.first?.type ?? .float }
     public var outputNames: [String] { outputs.map(\.name) }
 }
@@ -217,16 +232,31 @@ public struct CompileResult: Sendable {
 
     public var isValid: Bool { program != nil }
 
+    // MARK: Typed inputs (the general surface)
+
+    /// All outputs as typed values, in `interface.outputs` order. Inputs are
+    /// keyed by port name; supply the type each `InputPort` declares (free
+    /// identifiers are `float`).
+    public func evaluateValues(with inputs: [String: EngineValue]) throws(EvalError) -> [EngineValue] {
+        guard let program else { throw EvalError.notCompiled }
+        return try program.runValues(inputs)
+    }
+
+    /// The first output as a typed value, with typed inputs.
+    public func evaluateValue(with inputs: [String: EngineValue]) throws(EvalError) -> EngineValue {
+        try evaluateValues(with: inputs).first ?? .float(.nan)
+    }
+
+    // MARK: Float-input conveniences (all inputs are scalars)
+
     /// The first output as a typed value.
     public func evaluateValue(_ inputs: [String: Float]) throws(EvalError) -> EngineValue {
-        guard let program else { throw EvalError.notCompiled }
-        return try program.runValues(inputs).first ?? .float(.nan)
+        try evaluateValue(with: inputs.mapValues { EngineValue.float($0) })
     }
 
     /// All outputs as typed values, in `interface.outputs` order.
     public func evaluateValues(_ inputs: [String: Float]) throws(EvalError) -> [EngineValue] {
-        guard let program else { throw EvalError.notCompiled }
-        return try program.runValues(inputs)
+        try evaluateValues(with: inputs.mapValues { EngineValue.float($0) })
     }
 
     /// The first output as a `Float` (its scalar / first component). Convenience.
@@ -244,5 +274,5 @@ public struct CompileResult: Sendable {
 /// test oracle). Produces all outputs as typed values in source order.
 struct Program: Sendable {
     let outputCount: Int
-    let runValues: @Sendable ([String: Float]) throws(EvalError) -> [EngineValue]
+    let runValues: @Sendable ([String: EngineValue]) throws(EvalError) -> [EngineValue]
 }

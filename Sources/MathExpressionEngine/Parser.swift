@@ -57,6 +57,26 @@ struct Parser {
     }
 
     private mutating func parseItem() -> ParseItem? {
+        // Input declaration: `in name: Type`
+        if case .identifier("in") = current.kind {
+            let keywordSpan = current.span
+            advance()
+            guard case .identifier(let name) = current.kind else {
+                diagnostics.append(Diagnostic(code: .expectedName, severity: .error,
+                                              message: "Expected a name after `in`.", span: current.span))
+                return nil
+            }
+            advance()
+            guard case .colon = current.kind else {
+                diagnostics.append(Diagnostic(code: .expectedColon, severity: .error,
+                                              message: "Expected `:` and a type after `in \(name)`.", span: current.span))
+                return nil
+            }
+            advance()
+            guard let type = parseType() else { return nil }
+            return .input(name, type, merge(keywordSpan, current.span))
+        }
+
         if case .identifier(let keyword) = current.kind, keyword == "let" || keyword == "out" {
             let isOutput = (keyword == "out")
             let keywordSpan = current.span
@@ -87,6 +107,42 @@ struct Parser {
         return .expr(expr)
     }
 
+    /// A type annotation: a base type name (`float`, `vec2/3/4`, `transform`,
+    /// `quat`) followed by any number of `[]` array suffixes.
+    private mutating func parseType() -> ValueType? {
+        guard case .identifier(let base) = current.kind else {
+            diagnostics.append(Diagnostic(code: .unknownType, severity: .error,
+                                          message: "Expected a type name (like `float`, `vec3`, or `vec3[]`).", span: current.span))
+            return nil
+        }
+        let baseSpan = current.span
+        var type: ValueType
+        switch base {
+        case "float":     type = .float
+        case "vec2":      type = .vec2
+        case "vec3":      type = .vec3
+        case "vec4":      type = .vec4
+        case "transform": type = .transform
+        case "quat":      type = .quat
+        default:
+            diagnostics.append(Diagnostic(code: .unknownType, severity: .error,
+                                          message: "Unknown type `\(base)`.", span: baseSpan))
+            return nil
+        }
+        advance()
+        while case .lbracket = current.kind {
+            advance()
+            guard case .rbracket = current.kind else {
+                diagnostics.append(Diagnostic(code: .unknownType, severity: .error,
+                                              message: "Expected `]` to close an array type.", span: current.span))
+                return nil
+            }
+            advance()
+            type = .array(type)
+        }
+        return type
+    }
+
     private mutating func normalize(_ items: [ParseItem]) -> Body? {
         let bareExprs: [Expr] = items.compactMap { if case .expr(let e) = $0 { return e } else { return nil } }
         let hasOutput = items.contains { if case .output = $0 { return true } else { return false } }
@@ -114,6 +170,7 @@ struct Parser {
         var statements: [Statement] = []
         for item in items {
             switch item {
+            case .input(let n, let t, let s):  statements.append(.input(name: n, type: t, span: s))
             case .local(let n, let e, let s):  statements.append(.local(name: n, value: e, span: s))
             case .output(let n, let e, let s): statements.append(.output(name: n, value: e, span: s))
             case .expr(let e):                 statements.append(.output(name: "result", value: e, span: e.span))
@@ -124,7 +181,7 @@ struct Parser {
 
     private func spanOf(_ item: ParseItem) -> Span {
         switch item {
-        case .local(_, _, let s), .output(_, _, let s): return s
+        case .input(_, _, let s), .local(_, _, let s), .output(_, _, let s): return s
         case .expr(let e): return e.span
         }
     }
@@ -240,7 +297,8 @@ struct Parser {
 
         guard let first = parseAdditive() else { return nil }
 
-        // Comprehension: `[ body for i in lo (.. | ..<) hi ]`
+        // Comprehension over a range `[ body for i in lo (.. | ..<) hi ]`, or
+        // over an array `[ body for p in arrayExpr ]`.
         if case .identifier("for") = current.kind {
             advance()
             guard case .identifier(let loopVar) = current.kind else {
@@ -255,15 +313,22 @@ struct Parser {
                 return nil
             }
             advance()
-            guard let lo = parseAdditive() else { return nil }
+            guard let source = parseAdditive() else { return nil }
 
+            // A `..`/`..<` here means a numeric range; otherwise `source` is the
+            // array being iterated.
             let inclusive: Bool
             if case .dotDotLess = current.kind { inclusive = false; advance() }
             else if case .dotDot = current.kind { inclusive = true; advance() }
             else {
-                diagnostics.append(Diagnostic(code: .expectedRange, severity: .error,
-                                              message: "Expected `..` or `..<` in the comprehension range.", span: current.span))
-                return nil
+                guard case .rbracket = current.kind else {
+                    diagnostics.append(Diagnostic(code: .unmatchedParen, severity: .error,
+                                                  message: "Expected `]` to close the comprehension.", span: current.span))
+                    return nil
+                }
+                let span = merge(startSpan, current.span)
+                advance()
+                return .mapComprehension(body: first, loopVar: loopVar, source: source, span)
             }
 
             guard let hi = parseAdditive() else { return nil }
@@ -274,7 +339,7 @@ struct Parser {
             }
             let span = merge(startSpan, current.span)
             advance()
-            return .comprehension(body: first, loopVar: loopVar, lo: lo, hi: hi, inclusive: inclusive, span)
+            return .comprehension(body: first, loopVar: loopVar, lo: source, hi: hi, inclusive: inclusive, span)
         }
 
         // Array literal: `[ first (, expr)* ]`
@@ -355,6 +420,7 @@ struct Parser {
 
 /// A parsed statement before normalization into `Body`.
 private enum ParseItem {
+    case input(String, ValueType, Span)
     case local(String, Expr, Span)
     case output(String, Expr, Span)
     case expr(Expr)

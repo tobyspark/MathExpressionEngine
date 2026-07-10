@@ -9,11 +9,13 @@
 
 enum ReferenceInterpreter {
 
-    static func evalBody(_ body: Body, _ inputs: [String: Float]) throws(EvalError) -> [EngineValue] {
+    static func evalBody(_ body: Body, _ inputs: [String: EngineValue]) throws(EvalError) -> [EngineValue] {
         var locals: [String: EngineValue] = [:]
         var outputs: [EngineValue] = []
         for stmt in body.statements {
             switch stmt {
+            case .input:
+                break   // declared inputs are supplied by name in `inputs`
             case .local(let name, let value, _):
                 locals[name] = try eval(value, inputs, locals)
             case .output(_, let value, _):
@@ -23,7 +25,7 @@ enum ReferenceInterpreter {
         return outputs
     }
 
-    static func eval(_ e: Expr, _ inputs: [String: Float], _ locals: [String: EngineValue]) throws(EvalError) -> EngineValue {
+    static func eval(_ e: Expr, _ inputs: [String: EngineValue], _ locals: [String: EngineValue]) throws(EvalError) -> EngineValue {
         switch e {
         case .number(let value, _):
             return .float(value)
@@ -32,7 +34,7 @@ enum ReferenceInterpreter {
             if let local = locals[name] { return local }
             if let constant = Builtins.constants[name] { return .float(constant) }
             guard let value = inputs[name] else { throw EvalError.missingInput(name) }
-            return .float(value)
+            return value
 
         case .negate(let operand, _):
             return EngineValue.negate(try eval(operand, inputs, locals))
@@ -85,6 +87,18 @@ enum ReferenceInterpreter {
                 k += 1
             }
             return .array(els)
+
+        case .mapComprehension(let bodyExpr, let loopVar, let source, _):
+            let s = try eval(source, inputs, locals)
+            let els = s.arrayElements ?? []
+            var out: [EngineValue] = []
+            out.reserveCapacity(els.count)
+            var scoped = locals
+            for el in els {
+                scoped[loopVar] = el
+                out.append(try eval(bodyExpr, inputs, scoped))
+            }
+            return .array(out)
 
         case .call(let name, let args, _):
             var vs: [EngineValue] = []
