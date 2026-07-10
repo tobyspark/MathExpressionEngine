@@ -2,21 +2,18 @@
 //  Tape.swift
 //  FunctionEngine
 //
-//  The flat POD bytecode: a register machine. Lowering turns the typed body into
-//  a linear array of trivially-copyable `Instr` addressing a register file by
-//  index, plus a constant pool, an ordered input list, and one result register
-//  per output. No classes, closures, or strings in the instruction stream — so
-//  `Tape` is `Sendable` and the eval loop touches no ARC.
+//  The flat POD bytecode: a register machine over `EngineValue` registers.
+//  Instructions are trivially-copyable (register/const/input indices, a
+//  payload-free `FnID`, small ints) — no strings/closures/arrays — so `Tape` is
+//  `Sendable` and the eval loop touches no ARC. The register scratch is
+//  stack-allocated (`withUnsafeTemporaryAllocation`), so eval allocates only the
+//  small output array.
 //
-//  The eval loop uses `withUnsafeTemporaryAllocation` for the combined
-//  input + register scratch, so a typical scalar evaluation makes NO heap
-//  allocation (small scratch is stack-allocated).
+//  (Value math is dynamically dispatched via `EngineValue` for now; a later
+//  slice can monomorphize per sema's static types.)
 //
 
-import Foundation
-
-/// A single instruction. Payloads are register/constant/input indices and a
-/// payload-free `FnID` — all trivial, so `Instr` is POD and `Sendable`.
+/// A single instruction. All payloads are trivial → POD / `Sendable`.
 enum Instr: Sendable {
     case loadConst(dst: Int, constIndex: Int)
     case loadInput(dst: Int, inputIndex: Int)
@@ -25,21 +22,21 @@ enum Instr: Sendable {
     case call1(FnID, dst: Int, a: Int)
     case call2(FnID, dst: Int, a: Int, b: Int)
     case call3(FnID, dst: Int, a: Int, b: Int, c: Int)
+    case construct2(dst: Int, a: Int, b: Int)
+    case construct3(dst: Int, a: Int, b: Int, c: Int)
+    case construct4(dst: Int, a: Int, b: Int, c: Int, d: Int)
+    case splat(dst: Int, src: Int, width: Int)
+    case swizzle(dst: Int, src: Int, i0: Int, i1: Int, i2: Int, i3: Int, count: Int)
 }
 
-/// A compiled program in register-machine form.
 struct Tape: Sendable {
     let instructions: [Instr]
     let constants: [Float]
-    let inputOrder: [String]                               // inputIndex → name
+    let inputOrder: [String]
     let registerCount: Int
-    let outputRegisters: [(name: String, register: Int)]   // outputs in source order
+    let outputRegisters: [(name: String, register: Int)]
 }
 
-/// Lowers a `Body` to a `Tape`. Each subexpression's result is written to a
-/// fresh register (SSA-like); a `let` records its register so later references
-/// reuse it directly. Register reuse is a later optimization and doesn't affect
-/// results.
 private struct Lowerer {
     var instructions: [Instr] = []
     var constants: [Float] = []
@@ -79,7 +76,6 @@ private struct Lowerer {
         return outputs
     }
 
-    /// Lower `e`, returning the register that will hold its value.
     mutating func lower(_ e: Expr) -> Int {
         switch e {
         case .number(let value, _):
@@ -88,7 +84,7 @@ private struct Lowerer {
             return dst
 
         case .variable(let name, _):
-            if let reg = localRegister[name] { return reg }   // reference to a `let`
+            if let reg = localRegister[name] { return reg }
             let dst = newRegister()
             if let constant = Builtins.constants[name] {
                 instructions.append(.loadConst(dst: dst, constIndex: constSlot(constant)))
@@ -110,7 +106,34 @@ private struct Lowerer {
             instructions.append(.binary(op, dst: dst, lhs: lhs, rhs: rhs))
             return dst
 
+        case .swizzle(let base, let chars, _):
+            let src = lower(base)
+            let idx = swizzleIndices(chars) ?? [0]
+            let i0 = idx[0]
+            let i1 = idx.count > 1 ? idx[1] : 0
+            let i2 = idx.count > 2 ? idx[2] : 0
+            let i3 = idx.count > 3 ? idx[3] : 0
+            let dst = newRegister()
+            instructions.append(.swizzle(dst: dst, src: src, i0: i0, i1: i1, i2: i2, i3: i3, count: idx.count))
+            return dst
+
         case .call(let name, let args, _):
+            if Builtins.isConstructor(name) {
+                let width = name == "vec2" ? 2 : (name == "vec3" ? 3 : 4)
+                let regs = args.map { lower($0) }
+                let dst = newRegister()
+                if regs.count == 1 {
+                    instructions.append(.splat(dst: dst, src: regs[0], width: width))
+                } else {
+                    switch width {
+                    case 2:  instructions.append(.construct2(dst: dst, a: regs[0], b: regs[1]))
+                    case 3:  instructions.append(.construct3(dst: dst, a: regs[0], b: regs[1], c: regs[2]))
+                    default: instructions.append(.construct4(dst: dst, a: regs[0], b: regs[1], c: regs[2], d: regs[3]))
+                    }
+                }
+                return dst
+            }
+
             guard let id = Builtins.id(forName: name) else {
                 let dst = newRegister()
                 instructions.append(.loadConst(dst: dst, constIndex: constSlot(.nan)))
@@ -128,7 +151,6 @@ private struct Lowerer {
     }
 }
 
-/// Lower a typed body to a `Tape`.
 func lower(_ body: Body) -> Tape {
     var lowerer = Lowerer()
     let outputs = lowerer.lowerBody(body)
@@ -143,74 +165,53 @@ func lower(_ body: Body) -> Tape {
 
 // MARK: - Execution
 
-/// Run the instruction stream over a scratch buffer whose `[0, base)` prefix
-/// already holds the resolved inputs; registers live at `[base, base + n)`.
-private func execute(_ tape: Tape, into scratch: UnsafeMutableBufferPointer<Float>, base: Int) {
+private func executeValues(_ tape: Tape, into r: UnsafeMutableBufferPointer<EngineValue>, base: Int) {
     for ins in tape.instructions {
         switch ins {
         case .loadConst(let dst, let ci):
-            scratch[base + dst] = tape.constants[ci]
+            r[base + dst] = .float(tape.constants[ci])
         case .loadInput(let dst, let ii):
-            scratch[base + dst] = scratch[ii]
+            r[base + dst] = r[ii]
         case .negate(let dst, let src):
-            scratch[base + dst] = -scratch[base + src]
+            r[base + dst] = EngineValue.negate(r[base + src])
         case .binary(let op, let dst, let lhs, let rhs):
-            let a = scratch[base + lhs], b = scratch[base + rhs]
-            switch op {
-            case .add: scratch[base + dst] = a + b
-            case .sub: scratch[base + dst] = a - b
-            case .mul: scratch[base + dst] = a * b
-            case .div: scratch[base + dst] = a / b
-            case .mod: scratch[base + dst] = a.truncatingRemainder(dividingBy: b)
-            case .pow: scratch[base + dst] = Float(pow(Double(a), Double(b)))
-            }
+            r[base + dst] = EngineValue.binary(op, r[base + lhs], r[base + rhs])
         case .call1(let id, let dst, let a):
-            scratch[base + dst] = Builtins.evaluate(id, scratch[base + a], 0, 0)
+            r[base + dst] = Builtins.evaluateValue(id, r[base + a], .float(0), .float(0))
         case .call2(let id, let dst, let a, let b):
-            scratch[base + dst] = Builtins.evaluate(id, scratch[base + a], scratch[base + b], 0)
+            r[base + dst] = Builtins.evaluateValue(id, r[base + a], r[base + b], .float(0))
         case .call3(let id, let dst, let a, let b, let c):
-            scratch[base + dst] = Builtins.evaluate(id, scratch[base + a], scratch[base + b], scratch[base + c])
+            r[base + dst] = Builtins.evaluateValue(id, r[base + a], r[base + b], r[base + c])
+        case .construct2(let dst, let a, let b):
+            r[base + dst] = EngineValue.construct2(r[base + a].scalar, r[base + b].scalar)
+        case .construct3(let dst, let a, let b, let c):
+            r[base + dst] = EngineValue.construct3(r[base + a].scalar, r[base + b].scalar, r[base + c].scalar)
+        case .construct4(let dst, let a, let b, let c, let d):
+            r[base + dst] = EngineValue.construct4(r[base + a].scalar, r[base + b].scalar, r[base + c].scalar, r[base + d].scalar)
+        case .splat(let dst, let src, let width):
+            r[base + dst] = EngineValue.splat(width, r[base + src].scalar)
+        case .swizzle(let dst, let src, let i0, let i1, let i2, let i3, let count):
+            r[base + dst] = EngineValue.swizzle(r[base + src], i0, i1, i2, i3, count: count)
         }
     }
 }
 
-/// Evaluate the first output. Allocation-free (stack scratch).
-func runTapeFirst(_ tape: Tape, _ inputs: [String: Float]) throws(EvalError) -> Float {
+/// Evaluate all outputs, in source order. The register scratch stays on the
+/// stack; only the returned array allocates.
+func runTapeValues(_ tape: Tape, _ inputs: [String: Float]) throws(EvalError) -> [EngineValue] {
     let inputCount = tape.inputOrder.count
     let total = inputCount + tape.registerCount
     var missing: String? = nil
+    var result = [EngineValue](repeating: .float(0), count: tape.outputRegisters.count)
 
-    let result = withUnsafeTemporaryAllocation(of: Float.self, capacity: total) { scratch -> Float in
+    withUnsafeTemporaryAllocation(of: EngineValue.self, capacity: total) { scratch in
         var i = 0
         while i < inputCount {
             let name = tape.inputOrder[i]
-            if let value = inputs[name] { scratch[i] = value } else { missing = name; return .nan }
+            if let value = inputs[name] { scratch[i] = .float(value) } else { missing = name; return }
             i += 1
         }
-        execute(tape, into: scratch, base: inputCount)
-        return scratch[inputCount + tape.outputRegisters[0].register]
-    }
-
-    if let missing { throw EvalError.missingInput(missing) }
-    return result
-}
-
-/// Evaluate all outputs, in source order. Allocates only the returned array;
-/// the register scratch stays on the stack.
-func runTapeAll(_ tape: Tape, _ inputs: [String: Float]) throws(EvalError) -> [Float] {
-    let inputCount = tape.inputOrder.count
-    let total = inputCount + tape.registerCount
-    var missing: String? = nil
-    var result = [Float](repeating: 0, count: tape.outputRegisters.count)
-
-    withUnsafeTemporaryAllocation(of: Float.self, capacity: total) { scratch in
-        var i = 0
-        while i < inputCount {
-            let name = tape.inputOrder[i]
-            if let value = inputs[name] { scratch[i] = value } else { missing = name; return }
-            i += 1
-        }
-        execute(tape, into: scratch, base: inputCount)
+        executeValues(tape, into: scratch, base: inputCount)
         for (k, output) in tape.outputRegisters.enumerated() {
             result[k] = scratch[inputCount + output.register]
         }

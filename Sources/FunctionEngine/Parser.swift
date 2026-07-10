@@ -173,7 +173,7 @@ struct Parser {
     }
 
     private mutating func parsePower() -> Expr? {
-        guard let base = parsePrimary() else { return nil }
+        guard let base = parsePostfix() else { return nil }
         if case .caret = current.kind {
             advance()
             // Right operand is a unary so `2 ^ -3` parses; recursion gives right-assoc.
@@ -181,6 +181,24 @@ struct Parser {
             return .binary(.pow, base, exponent, merge(base.span, exponent.span))
         }
         return base
+    }
+
+    // Postfix: primary followed by any number of `.swizzle` accesses.
+    private mutating func parsePostfix() -> Expr? {
+        guard var expr = parsePrimary() else { return nil }
+        while case .dot = current.kind {
+            advance()
+            guard case .identifier(let chars) = current.kind else {
+                diagnostics.append(Diagnostic(code: .badSwizzle, severity: .error,
+                                              message: "Expected a swizzle like `.x` or `.xyz` after `.`.",
+                                              span: current.span))
+                return nil
+            }
+            let span = merge(expr.span, current.span)
+            advance()
+            expr = .swizzle(expr, chars, span)
+        }
+        return expr
     }
 
     private mutating func parsePrimary() -> Expr? {
@@ -267,6 +285,7 @@ private func describe(_ t: Token) -> String {
     case .comma:             return ","
     case .equals:            return "="
     case .semicolon:         return ";"
+    case .dot:               return "."
     case .eof:               return "end of input"
     }
 }

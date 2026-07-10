@@ -5,8 +5,7 @@
 //  The public surface consumed by the Fabric Function Node.
 //
 
-/// A source range: a start offset (in characters) and a length. Used to place
-/// diagnostics at the exact site of a problem.
+/// A source range: a start offset (in characters) and a length.
 public struct Span: Equatable, Sendable {
     public let start: Int
     public let length: Int
@@ -20,22 +19,24 @@ public enum Severity: Sendable, Equatable {
     case error, warning, info
 }
 
-/// Stable diagnostic codes (a subset of the full `FN####` scheme; see
+/// Stable diagnostic codes (a subset of the `FN####` scheme; see
 /// DESIGN-FunctionNode-Diagnostics.md).
 public enum DiagnosticCode: String, Sendable, Equatable {
-    case unexpectedToken       // FN2001 / FN1001
-    case unmatchedParen        // FN2002
-    case incompleteExpression  // FN2004
-    case emptyBody             // FN2005
-    case unknownName           // FN3001
-    case argumentCount         // FN4005
-    case mixedOutput           // FN5001 — bare trailing expression mixed with `out`
+    case unexpectedToken
+    case unmatchedParen
+    case incompleteExpression
+    case emptyBody
+    case unknownName
+    case argumentCount
+    case typeMismatch          // operator / function argument type error
+    case badSwizzle            // invalid swizzle (bad component, or swizzling a scalar)
+    case mixedOutput           // FN5001
     case duplicateOutput       // FN5002
     case noOutput              // FN5003
-    case duplicateBinding      // a `let` name declared twice
-    case useBeforeDefinition   // a `let` referenced before its definition
-    case expectedName          // `let`/`out` without a valid identifier
-    case expectedEquals        // `let`/`out` without `=`
+    case duplicateBinding
+    case useBeforeDefinition
+    case expectedName
+    case expectedEquals
 }
 
 public struct Diagnostic: Sendable, Equatable {
@@ -51,10 +52,76 @@ public struct Diagnostic: Sendable, Equatable {
     }
 }
 
-/// The value/port types the engine can produce. Scalar slice: `.float` only;
-/// later slices add vec2/3/4, color, quat, transform, and arrays.
+/// The value/port types the engine can produce.
 public enum ValueType: Sendable, Equatable {
-    case float
+    case float, vec2, vec3, vec4
+
+    public var width: Int {
+        switch self {
+        case .float: return 1
+        case .vec2:  return 2
+        case .vec3:  return 3
+        case .vec4:  return 4
+        }
+    }
+
+    public var isVector: Bool { self != .float }
+
+    public var name: String {
+        switch self {
+        case .float: return "float"
+        case .vec2:  return "vec2"
+        case .vec3:  return "vec3"
+        case .vec4:  return "vec4"
+        }
+    }
+
+    static func ofWidth(_ w: Int) -> ValueType? {
+        switch w {
+        case 1: return .float
+        case 2: return .vec2
+        case 3: return .vec3
+        case 4: return .vec4
+        default: return nil
+        }
+    }
+}
+
+/// A typed value the engine produces. Trivial (SIMD payloads) — no heap, no ARC.
+public enum EngineValue: Sendable, Equatable {
+    case float(Float)
+    case vec2(SIMD2<Float>)
+    case vec3(SIMD3<Float>)
+    case vec4(SIMD4<Float>)
+
+    public var type: ValueType {
+        switch self {
+        case .float: return .float
+        case .vec2:  return .vec2
+        case .vec3:  return .vec3
+        case .vec4:  return .vec4
+        }
+    }
+
+    /// The scalar value (float) or the first component (vectors).
+    public var scalar: Float {
+        switch self {
+        case .float(let x): return x
+        case .vec2(let v):  return v.x
+        case .vec3(let v):  return v.x
+        case .vec4(let v):  return v.x
+        }
+    }
+
+    /// Components as a `[Float]` (length == type.width).
+    public var components: [Float] {
+        switch self {
+        case .float(let x): return [x]
+        case .vec2(let v):  return [v.x, v.y]
+        case .vec3(let v):  return [v.x, v.y, v.z]
+        case .vec4(let v):  return [v.x, v.y, v.z, v.w]
+        }
+    }
 }
 
 /// A named, typed output port derived from the expression.
@@ -67,11 +134,10 @@ public struct OutputPort: Sendable, Equatable {
     }
 }
 
-/// The node interface *derived from the expression* — the single-source-of-truth
-/// claim, expressed as data. `inputs` are the free identifiers in first-appearance
-/// order (deduplicated, constants and locals excluded). `outputs` are the `out`
-/// declarations in source order, or a single implicit `result` for a bare
-/// expression.
+/// The node interface *derived from the expression*. `inputs` are the free
+/// identifiers in first-appearance order (all `float` in this slice; deduplicated,
+/// constants and locals excluded). `outputs` are the `out` declarations in source
+/// order (types inferred), or a single implicit `result`.
 public struct Interface: Sendable, Equatable {
     public let inputs: [String]
     public let outputs: [OutputPort]
@@ -81,10 +147,7 @@ public struct Interface: Sendable, Equatable {
         self.outputs = outputs
     }
 
-    /// Convenience: the first output's type (the common single-output case).
     public var outputType: ValueType { outputs.first?.type ?? .float }
-
-    /// Convenience: output names in order.
     public var outputNames: [String] { outputs.map(\.name) }
 }
 
@@ -99,7 +162,6 @@ public struct CompileResult: Sendable {
     public let interface: Interface
     public let diagnostics: [Diagnostic]
 
-    /// Present iff the source compiled without error-severity diagnostics.
     let program: Program?
 
     init(interface: Interface, diagnostics: [Diagnostic], program: Program?) {
@@ -108,28 +170,34 @@ public struct CompileResult: Sendable {
         self.program = program
     }
 
-    /// True when the expression compiled to an evaluable program.
     public var isValid: Bool { program != nil }
 
-    /// Evaluate the first (or only) output. Allocation-free fast path.
-    /// Throws `.notCompiled` if the source did not compile, or `.missingInput`
-    /// if a required input was not supplied.
-    public func evaluate(_ inputs: [String: Float]) throws(EvalError) -> Float {
+    /// The first output as a typed value.
+    public func evaluateValue(_ inputs: [String: Float]) throws(EvalError) -> EngineValue {
         guard let program else { throw EvalError.notCompiled }
-        return try program.runFirst(inputs)
+        return try program.runValues(inputs).first ?? .float(.nan)
     }
 
-    /// Evaluate all outputs, in `interface.outputs` order.
-    public func evaluateAll(_ inputs: [String: Float]) throws(EvalError) -> [Float] {
+    /// All outputs as typed values, in `interface.outputs` order.
+    public func evaluateValues(_ inputs: [String: Float]) throws(EvalError) -> [EngineValue] {
         guard let program else { throw EvalError.notCompiled }
-        return try program.runAll(inputs)
+        return try program.runValues(inputs)
+    }
+
+    /// The first output as a `Float` (its scalar / first component). Convenience.
+    public func evaluate(_ inputs: [String: Float]) throws(EvalError) -> Float {
+        try evaluateValue(inputs).scalar
+    }
+
+    /// All outputs as `Float` (scalar / first component each). Convenience.
+    public func evaluateAll(_ inputs: [String: Float]) throws(EvalError) -> [Float] {
+        try evaluateValues(inputs).map(\.scalar)
     }
 }
 
 /// An evaluable program (tape-backed in production, reference-backed as the
-/// test oracle). Immutable value with `@Sendable` evaluators.
+/// test oracle). Produces all outputs as typed values in source order.
 struct Program: Sendable {
     let outputCount: Int
-    let runFirst: @Sendable ([String: Float]) throws(EvalError) -> Float
-    let runAll: @Sendable ([String: Float]) throws(EvalError) -> [Float]
+    let runValues: @Sendable ([String: Float]) throws(EvalError) -> [EngineValue]
 }

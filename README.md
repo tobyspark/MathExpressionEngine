@@ -11,7 +11,12 @@ swift test
 
 ## Status
 
-**Slice 1 — scalar Tier-0** (`Float` only) + **Slice 2 — POD tape**, built test-first:
+**Slices 1–5** — scalar Tier-0, POD tape (+ differential oracle), allocation-free
+eval, `let`/`out` multiple outputs, and **vectors** (`vec2/3/4`: constructors,
+swizzles, elementwise/broadcast ops, `length`/`dot`/`cross`/`normalize`,
+componentwise `genN` math; output types inferred). Values are a trivial
+`EngineValue` (SIMD payloads); vector *inputs* (needing type annotations) are
+deferred. Built test-first:
 
 - `compile(source) -> CompileResult` — lex → parse → infer interface → **lower to
   a flat POD bytecode tape** (register machine; `Instr`/`Tape` in `Tape.swift`).

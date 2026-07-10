@@ -2,19 +2,15 @@
 //  Builtins.swift
 //  FunctionEngine
 //
-//  The scalar builtin table: constants, function arities (for the checker), a
-//  payload-free `FnID` (so the compiled tape dispatches without strings), and a
-//  single math implementation `evaluate(id:…)` shared by the tape and the
-//  reference interpreter. Semantics follow DESIGN-FunctionNode-Catalogue.md:
-//  radians throughout, `^`/`pow` exponent, floor/ceil/round are float-valued.
-//  Transcendentals compute via Double and narrow to Float (this reference math
-//  is the oracle; the SIMD-native fast path comes in a later slice).
+//  Constants, function identities (`FnID`), arities, the scalar math
+//  implementation, and a typed `evaluateValue` over `EngineValue` (shared by the
+//  reference interpreter and the tape). Semantics per DESIGN-FunctionNode-Catalogue.md.
 //
 
 import Foundation
 
-/// Monomorphized builtin identity — no associated payload, so it is trivially
-/// Sendable and lives directly in POD tape instructions (no string dispatch).
+/// Monomorphized builtin identity — payload-free, so it lives directly in POD
+/// tape instructions.
 enum FnID: Sendable {
     case sin, cos, tan, asin, acos, atan
     case sqrt, abs, exp, log, log2
@@ -22,6 +18,7 @@ enum FnID: Sendable {
     case radians, degrees, saturate
     case atan2, pow, min, max, mod, step
     case clamp, mix, smoothstep
+    case length, distance, dot, cross, normalize
 }
 
 enum Builtins {
@@ -31,7 +28,7 @@ enum Builtins {
         "e":   Float(2.718281828459045235),
     ]
 
-    /// Argument count per function (drives the arity diagnostic).
+    /// Argument count per function.
     static let arities: [String: Int] = [
         "sin": 1, "cos": 1, "tan": 1,
         "asin": 1, "acos": 1, "atan": 1,
@@ -40,10 +37,24 @@ enum Builtins {
         "radians": 1, "degrees": 1, "saturate": 1,
         "atan2": 2, "pow": 2, "min": 2, "max": 2, "mod": 2, "step": 2,
         "clamp": 3, "mix": 3, "smoothstep": 3,
+        "length": 1, "distance": 2, "dot": 2, "cross": 2, "normalize": 1,
+    ]
+
+    /// Componentwise unary math functions (`genN → genN`).
+    static let genNUnary: Set<String> = [
+        "sin", "cos", "tan", "asin", "acos", "atan", "sqrt", "abs", "exp",
+        "log", "log2", "floor", "ceil", "round", "sign", "fract",
+        "radians", "degrees", "saturate",
+    ]
+
+    /// Multi-argument math functions that (in this slice) require scalar args.
+    static let scalarMulti: Set<String> = [
+        "atan2", "pow", "min", "max", "mod", "step", "clamp", "mix", "smoothstep",
     ]
 
     static func isFunction(_ name: String) -> Bool { arities[name] != nil }
     static func isConstant(_ name: String) -> Bool { constants[name] != nil }
+    static func isConstructor(_ name: String) -> Bool { name == "vec2" || name == "vec3" || name == "vec4" }
 
     static func id(forName name: String) -> FnID? {
         switch name {
@@ -75,16 +86,19 @@ enum Builtins {
         case "clamp": return .clamp
         case "mix": return .mix
         case "smoothstep": return .smoothstep
+        case "length": return .length
+        case "distance": return .distance
+        case "dot": return .dot
+        case "cross": return .cross
+        case "normalize": return .normalize
         default: return nil
         }
     }
 
-    /// The single math implementation. Unused arguments (per the function's
-    /// arity) are ignored, so callers may pass 0 for absent operands.
+    /// The single scalar math implementation. Unused arguments are ignored.
     @inline(__always)
     static func evaluate(_ id: FnID, _ a0: Float, _ a1: Float, _ a2: Float) -> Float {
         @inline(__always) func d(_ x: Float) -> Double { Double(x) }
-
         switch id {
         case .sin:      return Float(sin(d(a0)))
         case .cos:      return Float(cos(d(a0)))
@@ -110,21 +124,44 @@ enum Builtins {
         case .min:      return Swift.min(a0, a1)
         case .max:      return Swift.max(a0, a1)
         case .mod:      return a0.truncatingRemainder(dividingBy: a1)
-        case .step:     return a1 < a0 ? 0 : 1     // step(edge, x)
+        case .step:     return a1 < a0 ? 0 : 1
         case .clamp:    return Swift.min(Swift.max(a0, a1), a2)
         case .mix:      return a0 + (a1 - a0) * a2
         case .smoothstep:
             let t = Swift.min(Swift.max((a2 - a0) / (a1 - a0), 0), 1)
             return t * t * (3 - 2 * t)
+        // Vector-only ids never reach the scalar path.
+        case .length, .distance, .dot, .cross, .normalize:
+            return .nan
         }
     }
 
-    /// Name-based entry point used by the tree-walking reference interpreter.
+    /// Name-based scalar entry point (reference interpreter fallback / tests).
     static func apply(_ name: String, _ a: [Float]) -> Float {
         guard let id = id(forName: name) else { return .nan }
         let a0 = a.count > 0 ? a[0] : 0
         let a1 = a.count > 1 ? a[1] : 0
         let a2 = a.count > 2 ? a[2] : 0
         return evaluate(id, a0, a1, a2)
+    }
+
+    /// Typed evaluation over `EngineValue`. Unused args may be `.float(0)`.
+    static func evaluateValue(_ id: FnID, _ a0: EngineValue, _ a1: EngineValue, _ a2: EngineValue) -> EngineValue {
+        switch id {
+        case .length:    return .float(EngineValue.length(a0))
+        case .distance:  return .float(EngineValue.length(EngineValue.binary(.sub, a0, a1)))
+        case .dot:       return .float(EngineValue.dot(a0, a1))
+        case .cross:     return EngineValue.cross(a0, a1)
+        case .normalize: return EngineValue.binary(.div, a0, .float(EngineValue.length(a0)))
+        case .atan2, .pow, .min, .max, .mod, .step, .clamp, .mix, .smoothstep:
+            // Scalar-only multi-arg (this slice): args are floats.
+            return .float(evaluate(id, a0.scalar, a1.scalar, a2.scalar))
+        default:
+            // Componentwise unary genN.
+            let s = a0.wide
+            var out = SIMD4<Float>()
+            for i in 0..<a0.width { out[i] = evaluate(id, s[i], 0, 0) }
+            return EngineValue.make(out, width: a0.width)
+        }
     }
 }
