@@ -4,7 +4,7 @@
 //
 //  Constants, function identities (`FnID`), arities, the scalar math
 //  implementation, and a typed `evaluateValue` over `EngineValue` (shared by the
-//  reference interpreter and the tape). Semantics per DESIGN-FunctionNode-Catalogue.md.
+//  reference interpreter and the tape).
 //
 
 import Foundation
@@ -66,7 +66,7 @@ enum Builtins {
         "radians", "degrees", "saturate",
     ]
 
-    /// Multi-argument math functions that (in this slice) require scalar args.
+    /// Multi-argument math functions that require scalar args.
     static let scalarMulti: Set<String> = [
         "atan2", "pow", "min", "max", "mod", "step", "clamp", "mix", "smoothstep",
     ]
@@ -223,7 +223,7 @@ enum Builtins {
             if id == .mean { acc = EngineValue.binary(.div, acc, .float(Float(els.count))) }
             return acc
         case .atan2, .pow, .min, .max, .mod, .step, .clamp, .mix, .smoothstep:
-            // Scalar-only multi-arg (this slice): args are floats.
+            // Scalar-only multi-arg: args are floats.
             return .float(evaluate(id, a0.scalar, a1.scalar, a2.scalar))
         default:
             // Componentwise unary genN.

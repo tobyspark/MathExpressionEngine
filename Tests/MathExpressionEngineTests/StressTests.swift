@@ -5,10 +5,9 @@ import Testing
 // register counts, each checked against the reference interpreter — guarding the
 // register-machine execution (indexing, missing-input bail) under load.
 //
-// (Since slice 6 the register file is a heap `[EngineValue]` — Option B, unified
-// value type. The earlier stack-scratch/zero-alloc register file can be
-// reintroduced as a scalar/vector fast path behind these same tests; see
-// DESIGN-FunctionNode-Engine.md §9 / the arrays decision.)
+// The register file is a heap `[EngineValue]` (one allocation per eval). A
+// scalar/vector fast path with a stack-allocated register scratch can be
+// reintroduced behind these same tests without changing behaviour.
 
 @Suite struct StressTests {
 

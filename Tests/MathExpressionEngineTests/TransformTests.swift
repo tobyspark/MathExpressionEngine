@@ -73,7 +73,7 @@ import Testing
     }
 
     @Test func transformArrayComprehensionDrivesInstances() throws {
-        // The north-star: an array of transforms (feeds InstancedMesh).
+        // Representative target: an array of transforms (feeds InstancedMesh).
         let r = compile("[translate(vec3(i, 0, 0)) for i in 0..<n]")
         #expect(r.isValid, "\(r.diagnostics)")
         #expect(r.interface.outputType == .array(.transform))

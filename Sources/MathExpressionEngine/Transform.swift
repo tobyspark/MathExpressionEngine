@@ -5,10 +5,10 @@
 //  Portable column-major 4×4 matrix and quaternion, laid out to match Apple's
 //  `simd_float4x4` (columns) and `simd_quatf` (x,y,z,w) so the Fabric boundary is
 //  a trivial reinterpret. No dependency on the Apple `simd` module — built on
-//  stdlib `SIMD` types so the engine stays cross-platform / Linux-CI-testable.
+//  stdlib `SIMD` types so the engine stays cross-platform / Linux-testable.
 //
-//  Scope note: general 4×4 `inverse` and quaternion `slerp` are intentionally
-//  deferred to a follow-up slice.
+//  Scope note: general 4×4 `inverse` and quaternion `slerp` are not yet
+//  implemented.
 //
 
 import Foundation

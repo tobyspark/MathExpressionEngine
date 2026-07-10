@@ -5,8 +5,7 @@
 //  The bytecode: a register machine over `EngineValue` registers. Scalars/vectors
 //  are trivial; `.array` values are heap-backed, so the register file is a normal
 //  `[EngineValue]` (one allocation per eval) and comprehensions run a nested
-//  sub-tape recursively (Option B — one value type, clarity over a stack-scratch
-//  fast path, which can be reintroduced later behind the same tests).
+//  sub-tape recursively.
 //
 
 enum EngineLimits {

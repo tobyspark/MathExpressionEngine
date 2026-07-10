@@ -2,7 +2,7 @@
 //  Parser.swift
 //  MathExpressionEngine
 //
-//  Recursive-descent / precedence-climbing parser for the scalar Tier-0 grammar.
+//  Recursive-descent / precedence-climbing parser for the expression grammar.
 //  Precedence (low→high): + -  |  * / %  |  unary -  |  ^ (right-assoc)  |  call / primary.
 //  Unary minus binds looser than `^`, so `-2 ^ 2` == -(2^2) (math convention).
 //

@@ -19,8 +19,7 @@ public enum Severity: Sendable, Equatable {
     case error, warning, info
 }
 
-/// Stable diagnostic codes (a subset of the `FN####` scheme; see
-/// DESIGN-FunctionNode-Diagnostics.md).
+/// Stable diagnostic codes emitted by the compiler.
 public enum DiagnosticCode: String, Sendable, Equatable {
     case unexpectedToken
     case unmatchedParen
@@ -30,9 +29,9 @@ public enum DiagnosticCode: String, Sendable, Equatable {
     case argumentCount
     case typeMismatch          // operator / function argument type error
     case badSwizzle            // invalid swizzle (bad component, or swizzling a scalar)
-    case mixedOutput           // FN5001
-    case duplicateOutput       // FN5002
-    case noOutput              // FN5003
+    case mixedOutput           // mixing a bare expression with named `out` outputs
+    case duplicateOutput       // two outputs with the same name
+    case noOutput              // body declares no output at all
     case duplicateBinding
     case useBeforeDefinition
     case expectedName
@@ -179,7 +178,7 @@ public struct OutputPort: Sendable, Equatable {
 }
 
 /// The node interface *derived from the expression*. `inputs` are the free
-/// identifiers in first-appearance order (all `float` in this slice; deduplicated,
+/// identifiers in first-appearance order (all `float`; deduplicated,
 /// constants and locals excluded). `outputs` are the `out` declarations in source
 /// order (types inferred), or a single implicit `result`.
 public struct Interface: Sendable, Equatable {
