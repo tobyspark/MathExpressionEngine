@@ -12,11 +12,12 @@ typed output ports, and every type is inferred. One expression then covers
 anything from `sin(x) + y^2` to a procedural array of transforms.
 
 Design commitments:
-- **Native Swift + SIMD**, no C or C++. Portable, and its value types map to
-  Fabric's port values (`Float`, `simd_float3`, `simd_float4x4`, …) with little or
-  no conversion.
-- **Standalone and dependency-free** — no Fabric, Metal, or Satin — so the
-  correctness suite runs on a plain toolchain, independent of any app.
+- **Native Swift + SIMD**, no C or C++. Its value types *are* Fabric's port
+  values (`Float`, `simd_float3`, `simd_float4x4`, `simd_quatf`, …), so the node
+  boundary is a zero-copy reinterpret. Transforms/quaternions use Apple `simd`,
+  so the engine targets Apple platforms.
+- **Standalone** — no package dependencies and no Fabric, Metal, or Satin — so
+  the correctness suite runs on a plain Swift toolchain, independent of any app.
 - **Compile once, evaluate many:** compilation is a pure function safe to run off
   a render thread; evaluation is cheap enough to run per frame.
 - A representative target: `[ translate(vec3(i, 0, 0)) for i in 0..<n ]` produces a
@@ -80,7 +81,7 @@ Twelve test suites: unit tests, interface-as-data checks, per-builtin evaluation
 tables, **differential fuzzing** (bytecode tape versus the reference interpreter
 on randomized well-typed expressions), **metamorphic property tests** (matrix and
 quaternion identities), stress tests, and guardrail tests. Run with `swift test`
-on any Swift 6.1+ toolchain (macOS or Linux).
+on any Swift 6.1+ toolchain (Apple platforms).
 
 ### Public API
 

@@ -1,9 +1,10 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// Standalone, dependency-free engine for the Fabric Function Node.
-// No dependency on Fabric / Metal / Satin, so `swift test` runs the whole
-// correctness suite on a plain toolchain (macOS or Linux), no GPU required.
+// Standalone engine for the Fabric Function Node: no package dependencies and no
+// Fabric / Metal / Satin, so `swift test` runs the whole correctness suite with
+// no GPU or app. Transforms/quaternions use Apple `simd` at the port boundary, so
+// it targets Apple platforms (macOS/iOS/visionOS).
 let package = Package(
     name: "MathExpressionEngine",
     products: [

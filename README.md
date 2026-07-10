@@ -1,8 +1,10 @@
 # MathExpressionEngine
 
-A standalone, dependency-free typed-expression engine for Fabric's Math / Function
-node. No dependency on Fabric, Metal, or Satin, so the correctness suite runs on a
-plain toolchain (macOS or Linux):
+A standalone typed-expression engine for Fabric's Math / Function node. It has no
+package dependencies and doesn't touch Fabric, Metal, or Satin, so the correctness
+suite runs without a GPU or the app — just a Swift toolchain. Its transform /
+quaternion types are Apple `simd` (a zero-copy port boundary), so it targets Apple
+platforms (macOS/iOS/visionOS):
 
 ```sh
 cd MathExpressionEngine
