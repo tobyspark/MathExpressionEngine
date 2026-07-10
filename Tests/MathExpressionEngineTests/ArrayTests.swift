@@ -95,4 +95,43 @@ import Testing
         #expect(r.isValid)
         #expect(throws: EvalError.self) { try r.evaluate(["k": 5]) }
     }
+
+    // min/max reduce a single array argument (largest/smallest element).
+
+    @Test func minMaxReduceScalarArray() throws {
+        #expect(try value("min([3, 1, 2])") == .float(1))
+        #expect(try value("max([3, 1, 2])") == .float(3))
+        #expect(compile("min([3, 1, 2])").interface.outputType == .float)
+    }
+
+    @Test func minMaxReduceVectorArrayComponentwise() throws {
+        #expect(try value("max([vec3(1, 5, 3), vec3(4, 2, 6)])") == .vec3(SIMD3(4, 5, 6)))
+        #expect(try value("min([vec3(1, 5, 3), vec3(4, 2, 6)])") == .vec3(SIMD3(1, 2, 3)))
+        #expect(compile("max([vec2(1, 2), vec2(3, 4)])").interface.outputType == .vec2)
+    }
+
+    @Test func minMaxReduceArrayInput() throws {
+        let r = compile("in xs: float[]; out m = max(xs)")
+        #expect(r.isValid, "\(r.diagnostics)")
+        let m = try r.evaluateValue(with: ["xs": .array([.float(5), .float(2), .float(8), .float(1)])])
+        #expect(m == .float(8))
+    }
+
+    @Test func minMaxTwoArgFormStillComponentwise() throws {
+        // The reduction form doesn't disturb the existing two-argument form.
+        #expect(try value("min(3, 5)") == .float(3))
+        #expect(try value("max(vec2(1, 9), vec2(4, 2))") == .vec2(SIMD2(4, 9)))
+    }
+
+    @Test func minReducingNonArrayIsError() {
+        let r = compile("min(5)")
+        #expect(!r.isValid)
+        #expect(r.diagnostics.contains { $0.code == .argumentCount })
+    }
+
+    @Test func minReducingNonNumericArrayIsError() {
+        let r = compile("min([identity(), identity()])")
+        #expect(!r.isValid)
+        #expect(r.diagnostics.contains { $0.code == .typeMismatch })
+    }
 }

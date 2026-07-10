@@ -361,6 +361,7 @@ out picked = xs[k]       // k becomes an input port
 | `product(a)` | all elements multiplied |
 | `mean(a)` | average |
 | `count(a)` | how many elements (a number) |
+| `min(a)` `max(a)` | smallest / largest element (componentwise for vectors) |
 
 ```
 let samples = [ sin(i * 0.1) for i in 0..<100 ];
@@ -406,7 +407,7 @@ component. Everything takes and returns numbers unless noted otherwise.
 
 | Function | Meaning |
 |----------|---------|
-| `min(a, b)` `max(a, b)` | smaller / larger, *componentwise* |
+| `min(a, b)` `max(a, b)` | smaller / larger, *componentwise* (or `min(array)` / `max(array)` to reduce) |
 | `clamp(x, lo, hi)` | keep x within [lo, hi], *componentwise* |
 | `saturate(x)` | clamp to [0, 1], *componentwise* |
 | `mix(a, b, t)` | linear blend: `a` at t=0, `b` at t=1, *componentwise* |
@@ -446,8 +447,8 @@ usage.
 | `rotate(quat, vec3)` | `vec3` |
 | `mul(a, b)` | same as the `*` operator |
 
-**Arrays** — `sum`, `product`, `mean`, `count` (see
-[Arrays](#arrays-and-comprehensions)).
+**Arrays** — `sum`, `product`, `mean`, `count`, and `min` / `max` over an array
+(see [Arrays](#arrays-and-comprehensions)).
 
 ---
 

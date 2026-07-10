@@ -39,7 +39,8 @@ Design commitments:
 - **Arrays**: literals `[a, b, c]`; comprehensions over a numeric range
   `[body for i in lo..<hi]` (and the inclusive `..`) or over an array
   `[body for p in arr]` (the loop variable takes the element type); indexing
-  `a[i]`; and reductions `sum` / `product` / `mean` / `count`.
+  `a[i]`; and reductions `sum` / `product` / `mean` / `count`, plus `min` / `max`
+  over an array (componentwise for vectors).
 - **Inputs**: free identifiers are `float` input ports; `in name: Type` declares a
   typed input (`vec3`, `transform`, `quat`, `vec3[]`, …). Inference never widens
   an input beyond `float`, so declaration is the single escape hatch — and the
@@ -106,24 +107,21 @@ convenience for the all-scalar case.
 
 Roughly in priority order:
 
-1. **Array min/max reductions.** Multi-argument math is now componentwise over
-   vectors; the remaining gap is `min` / `max` as *reductions* over an array
-   (largest/smallest element), pairing with `sum` / `product` / `mean`.
-2. **Direct element+index iteration.** The array comprehension gives either the
+1. **Direct element+index iteration.** The array comprehension gives either the
    element (`for p in arr`) or the index (`for i in 0..<count(arr)`); an
    enumerate-style form yielding both would remove the index/`count` boilerplate.
-3. **More transform math:** general 4×4 `inverse`, spherical-linear interpolation
+2. **More transform math:** general 4×4 `inverse`, spherical-linear interpolation
    (`slerp`), `lookAt`, and Euler-angle quaternion construction.
-4. **Reduced-allocation evaluation:** a stack-allocated register scratch plus an
+3. **Reduced-allocation evaluation:** a stack-allocated register scratch plus an
    out-of-line array store for scalar/vector programs, leaving array-producing
    programs (which must allocate their output anyway) unchanged.
-5. **Type-specialized bytecode** (one instruction variant per resolved type) and,
+4. **Type-specialized bytecode** (one instruction variant per resolved type) and,
    optionally, batched SIMD evaluation of comprehension bodies.
-6. **Fabric node integration:** an adapter between `EngineValue` and the node
+5. **Fabric node integration:** an adapter between `EngineValue` and the node
    port types, dynamic typed ports derived from the compiled interface, document
    serialization, a source editor that renders diagnostics at their `line:column`,
    and migration of existing math-expression nodes. This layer is part of the app,
    not this package.
-7. **Additional polish:** parser error recovery that reports every error in one
+6. **Additional polish:** parser error recovery that reports every error in one
    pass, machine-applyable fix hints on diagnostics, and support for stateful
    (feedback) bindings that persist across evaluations.

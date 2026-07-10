@@ -69,6 +69,20 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
             return nil
         }
 
+        // `min`/`max` also reduce a single array argument to its componentwise
+        // min/max element (its two-argument form stays componentwise, below).
+        if (name == "min" || name == "max"), argTypes.count == 1 {
+            guard case .array(let elem) = argTypes[0] else {
+                diag(.argumentCount, "`\(name)` takes two values (componentwise) or one array (reduction).", span)
+                return nil
+            }
+            guard elem == .float || elem.isVector else {
+                diag(.typeMismatch, "`\(name)` reduces an array of numbers or vectors, not `\(elem.name)`.", span)
+                return nil
+            }
+            return elem
+        }
+
         guard let arity = Builtins.arities[name] else {
             diag(.unknownName, unknownFunctionMessage(name), span)
             return nil

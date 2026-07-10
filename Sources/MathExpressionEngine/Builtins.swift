@@ -225,15 +225,19 @@ enum Builtins {
             for k in 1..<els.count { acc = EngineValue.binary(op, acc, els[k]) }
             if id == .mean { acc = EngineValue.binary(.div, acc, .float(Float(els.count))) }
             return acc
-        case .atan2, .pow, .min, .max, .mod, .wrap, .step, .clamp, .mix, .smoothstep:
-            // Componentwise over the widest argument; scalars broadcast (a
-            // scalar's `wide` is splatted across all lanes).
-            let w = Swift.max(a0.width, a1.width, a2.width)
-            if w <= 1 { return .float(evaluate(id, a0.scalar, a1.scalar, a2.scalar)) }
-            let s0 = a0.wide, s1 = a1.wide, s2 = a2.wide
-            var out = SIMD4<Float>()
-            for i in 0..<w { out[i] = evaluate(id, s0[i], s1[i], s2[i]) }
-            return EngineValue.make(out, width: w)
+        case .min, .max:
+            // A single array argument reduces to its componentwise min/max
+            // element; two arguments are componentwise (broadcasting).
+            if let els = a0.arrayElements {
+                guard let first = els.first else { return .float(0) }
+                var acc = first
+                for k in 1..<els.count { acc = componentwise(id, acc, els[k], .float(0)) }
+                return acc
+            }
+            return componentwise(id, a0, a1, a2)
+
+        case .atan2, .pow, .mod, .wrap, .step, .clamp, .mix, .smoothstep:
+            return componentwise(id, a0, a1, a2)
         default:
             // Componentwise unary genN.
             let s = a0.wide
@@ -241,5 +245,16 @@ enum Builtins {
             for i in 0..<a0.width { out[i] = evaluate(id, s[i], 0, 0) }
             return EngineValue.make(out, width: a0.width)
         }
+    }
+
+    /// Apply a scalar function over the widest argument; scalars broadcast (a
+    /// scalar's `wide` is splatted across all lanes).
+    private static func componentwise(_ id: FnID, _ a0: EngineValue, _ a1: EngineValue, _ a2: EngineValue) -> EngineValue {
+        let w = Swift.max(a0.width, a1.width, a2.width)
+        if w <= 1 { return .float(evaluate(id, a0.scalar, a1.scalar, a2.scalar)) }
+        let s0 = a0.wide, s1 = a1.wide, s2 = a2.wide
+        var out = SIMD4<Float>()
+        for i in 0..<w { out[i] = evaluate(id, s0[i], s1[i], s2[i]) }
+        return EngineValue.make(out, width: w)
     }
 }
