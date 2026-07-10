@@ -4,6 +4,25 @@ Goal, present reality, and future steps for the engine.
 
 ---
 
+## What it is
+
+A small compiler for a statically-typed expression DSL whose primitives are native
+SIMD functions — it compiles and type-checks the source rather than interpreting it.
+
+- **Front-end (a real compiler):** `lex → parse → type-infer → lower`. Free
+  identifiers become typed input ports, `out name = …` become typed outputs, and
+  every type is inferred, with real diagnostics (arity, type mismatch, bad swizzle,
+  "did you mean…"). The expression *is* the schema — the ports fall out of the compile.
+- **Back-end (a tiny VM):** it lowers to a flat register-machine bytecode tape,
+  compiled once as a pure function off the render thread and executed cheaply per
+  frame. A tree-walking interpreter exists only as a differential test oracle.
+- **Native primitives:** leaves and builtins are native Swift / Apple `simd`
+  (`Float`, `simd_float3`, `simd_float4x4`, `simd_quatf`, arrays; trig, vector
+  algebra, transform/quat ops) dispatched by opcode, mapping onto Fabric's port
+  types as a zero-copy reinterpret.
+
+---
+
 ## Goal
 
 A typed expression engine where **the expression is the single source of truth**:
