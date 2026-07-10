@@ -16,7 +16,7 @@ enum FnID: Sendable {
     case sqrt, abs, exp, log, log2
     case floor, ceil, round, sign, fract
     case radians, degrees, saturate
-    case atan2, pow, min, max, mod, step
+    case atan2, pow, min, max, mod, wrap, step
     case clamp, mix, smoothstep
     case length, distance, dot, cross, normalize
     case sum, product, mean, count
@@ -39,7 +39,7 @@ enum Builtins {
         "sqrt": 1, "abs": 1, "exp": 1, "log": 1, "log2": 1,
         "floor": 1, "ceil": 1, "round": 1, "sign": 1, "fract": 1,
         "radians": 1, "degrees": 1, "saturate": 1,
-        "atan2": 2, "pow": 2, "min": 2, "max": 2, "mod": 2, "step": 2,
+        "atan2": 2, "pow": 2, "min": 2, "max": 2, "mod": 2, "wrap": 2, "step": 2,
         "clamp": 3, "mix": 3, "smoothstep": 3,
         "length": 1, "distance": 2, "dot": 2, "cross": 2, "normalize": 1,
         "sum": 1, "product": 1, "mean": 1, "count": 1,
@@ -68,7 +68,7 @@ enum Builtins {
 
     /// Multi-argument math functions that require scalar args.
     static let scalarMulti: Set<String> = [
-        "atan2", "pow", "min", "max", "mod", "step", "clamp", "mix", "smoothstep",
+        "atan2", "pow", "min", "max", "mod", "wrap", "step", "clamp", "mix", "smoothstep",
     ]
 
     static func isFunction(_ name: String) -> Bool { arities[name] != nil }
@@ -101,6 +101,7 @@ enum Builtins {
         case "min": return .min
         case "max": return .max
         case "mod": return .mod
+        case "wrap": return .wrap
         case "step": return .step
         case "clamp": return .clamp
         case "mix": return .mix
@@ -161,6 +162,7 @@ enum Builtins {
         case .min:      return Swift.min(a0, a1)
         case .max:      return Swift.max(a0, a1)
         case .mod:      return a0.truncatingRemainder(dividingBy: a1)
+        case .wrap:     return a0 - a1 * (a0 / a1).rounded(.down)   // floored mod: result in [0, a1)
         case .step:     return a1 < a0 ? 0 : 1
         case .clamp:    return Swift.min(Swift.max(a0, a1), a2)
         case .mix:      return a0 + (a1 - a0) * a2
@@ -222,7 +224,7 @@ enum Builtins {
             for k in 1..<els.count { acc = EngineValue.binary(op, acc, els[k]) }
             if id == .mean { acc = EngineValue.binary(.div, acc, .float(Float(els.count))) }
             return acc
-        case .atan2, .pow, .min, .max, .mod, .step, .clamp, .mix, .smoothstep:
+        case .atan2, .pow, .min, .max, .mod, .wrap, .step, .clamp, .mix, .smoothstep:
             // Scalar-only multi-arg: args are floats.
             return .float(evaluate(id, a0.scalar, a1.scalar, a2.scalar))
         default:

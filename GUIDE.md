@@ -133,7 +133,7 @@ out y = amplitude * sin(t * frequency)   // a simple oscillator
 |----------|---------|-------|
 | `+` `-` | add, subtract | |
 | `*` `/` | multiply, divide | `*` is also transform/rotation composition (below) |
-| `%` | remainder | `5 % 3` is `2` |
+| `%` | remainder | `5 % 3` is `2`; sign follows the left side, so `-1 % 3` is `-1` (use `wrap` to stay positive) |
 | `^` | power | `2 ^ 10` is `1024` |
 | `-x` | negate | |
 
@@ -345,7 +345,8 @@ component. Everything takes and returns numbers unless noted otherwise.
 | `mix(a, b, t)` | linear blend: `a` at t=0, `b` at t=1 |
 | `step(edge, x)` | 0 below the edge, 1 at/above |
 | `smoothstep(lo, hi, x)` | smooth 0→1 ramp between lo and hi |
-| `mod(a, b)` | remainder (or use the `%` operator) |
+| `mod(a, b)` | remainder, sign follows `a` (same as the `%` operator) |
+| `wrap(a, b)` | wraps `a` into `[0, b)` — stays positive for negative `a` |
 
 **Vectors**
 
@@ -430,7 +431,7 @@ The language is deliberately small. Things that are **not** in it (yet):
 - **No `if` / conditionals, comparisons, or booleans.** Reach for `step`,
   `clamp`, `mix`, and `smoothstep` to get branch-like behaviour smoothly.
 - **A few multi-argument maths functions are numbers-only** right now — `min`,
-  `max`, `clamp`, `mix`, `smoothstep`, `step`, `pow`, `atan2`, `mod`. Give them
+  `max`, `clamp`, `mix`, `smoothstep`, `step`, `pow`, `atan2`, `mod`, `wrap`. Give them
   plain numbers, not vectors. (The `^` and `%` *operators*, unlike the `pow` and
   `mod` functions, do work on vectors component-by-component.)
 - **No time variable is built in.** If you want animation, wire a time value into

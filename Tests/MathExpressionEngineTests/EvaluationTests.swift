@@ -50,6 +50,18 @@ private func approx(_ a: Float, _ b: Float, _ eps: Float = 1e-4) -> Bool {
         #expect(approx(try eval("mix(0, 10, 0.5)"), 5))
     }
 
+    @Test func wrapIsFlooredModulo() throws {
+        // Matches `%` for non-negative dividends...
+        #expect(approx(try eval("wrap(7, 3)"), 1))
+        #expect(approx(try eval("wrap(6, 3)"), 0))
+        #expect(approx(try eval("wrap(2.5, 2)"), 0.5))
+        // ...but stays in [0, b) for negatives, unlike `%` / `mod`.
+        #expect(approx(try eval("wrap(-1, 3)"), 2))    // `-1 % 3` would be -1
+        #expect(approx(try eval("wrap(-4, 3)"), 2))
+        #expect(approx(try eval("-1 % 3"), -1))        // contrast: truncated remainder
+        #expect(approx(try eval("mod(-1, 3)"), -1))
+    }
+
     @Test func constants() throws {
         #expect(approx(try eval("pi"), .pi))
         #expect(approx(try eval("tau"), 2 * .pi))
