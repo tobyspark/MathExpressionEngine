@@ -102,7 +102,7 @@ enum ReferenceInterpreter {
             }
 
             guard let id = Builtins.id(forName: name) else { return .float(.nan) }
-            let a0 = vs[0]
+            let a0 = vs.count > 0 ? vs[0] : .float(0)
             let a1 = vs.count > 1 ? vs[1] : .float(0)
             let a2 = vs.count > 2 ? vs[2] : .float(0)
             return Builtins.evaluateValue(id, a0, a1, a2)

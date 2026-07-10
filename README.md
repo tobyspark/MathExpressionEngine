@@ -11,12 +11,16 @@ swift test
 
 ## Status
 
-**Slices 1–5** — scalar Tier-0, POD tape (+ differential oracle), allocation-free
-eval, `let`/`out` multiple outputs, and **vectors** (`vec2/3/4`: constructors,
-swizzles, elementwise/broadcast ops, `length`/`dot`/`cross`/`normalize`,
-componentwise `genN` math; output types inferred). Values are a trivial
-`EngineValue` (SIMD payloads); vector *inputs* (needing type annotations) are
-deferred. Built test-first:
+**Slices 1–7** — scalar Tier-0, POD tape (+ differential oracle), allocation-free
+scalar eval, `let`/`out` multiple outputs, **vectors** (`vec2/3/4`), **arrays &
+comprehensions** (`[body for i in a..<b]`, indexing, `sum`/`mean`/`count`/`product`),
+and **transforms & quaternions** (`translate`/`scale`/`rotate*`/`compose`,
+`transformPoint`/`Dir`, `transpose`, `quatAxisAngle`/`conjugate`/`slerp`-TBD, and
+type-directed `*` for matmul / matrix·vec4 / quat compose / quat·vec3). Output
+types are inferred; the north-star `[translate(vec3(i,0,0)) for i in 0..<n]`
+yields a `transform[]`. `EngineValue` unifies all values (Option B); vector/matrix
+*inputs* (needing annotations) and general 4×4 `inverse`/`slerp` are deferred.
+Built test-first:
 
 - `compile(source) -> CompileResult` — lex → parse → infer interface → **lower to
   a flat POD bytecode tape** (register machine; `Instr`/`Tape` in `Tape.swift`).

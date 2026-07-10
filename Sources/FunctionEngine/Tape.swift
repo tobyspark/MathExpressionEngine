@@ -20,6 +20,7 @@ enum Instr: Sendable {
     case loadInput(dst: Int, inputIndex: Int)
     case negate(dst: Int, src: Int)
     case binary(BinaryOp, dst: Int, lhs: Int, rhs: Int)
+    case call0(FnID, dst: Int)
     case call1(FnID, dst: Int, a: Int)
     case call2(FnID, dst: Int, a: Int, b: Int)
     case call3(FnID, dst: Int, a: Int, b: Int, c: Int)
@@ -181,6 +182,7 @@ private struct Lowerer {
             let regs = args.map { lower($0) }
             let dst = newRegister()
             switch regs.count {
+            case 0:  instructions.append(.call0(id, dst: dst))
             case 1:  instructions.append(.call1(id, dst: dst, a: regs[0]))
             case 2:  instructions.append(.call2(id, dst: dst, a: regs[0], b: regs[1]))
             default: instructions.append(.call3(id, dst: dst, a: regs[0], b: regs[1], c: regs[2]))
@@ -215,6 +217,8 @@ private func executeInstrs(_ instructions: [Instr], _ r: inout [EngineValue], ba
             r[base + dst] = EngineValue.negate(r[base + src])
         case .binary(let op, let dst, let lhs, let rhs):
             r[base + dst] = EngineValue.binary(op, r[base + lhs], r[base + rhs])
+        case .call0(let id, let dst):
+            r[base + dst] = Builtins.evaluateValue(id, .float(0), .float(0), .float(0))
         case .call1(let id, let dst, let a):
             r[base + dst] = Builtins.evaluateValue(id, r[base + a], .float(0), .float(0))
         case .call2(let id, let dst, let a, let b):

@@ -64,6 +64,51 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
             return name == "count" ? .float : elem
         }
 
+        if Builtins.transformFns.contains(name) {
+            func require(_ ok: Bool, _ message: String) -> Bool {
+                if !ok { diag(.typeMismatch, message, span) }
+                return ok
+            }
+            switch name {
+            case "identity":
+                return .transform
+            case "translate":
+                return require(argTypes[0] == .vec3, "`translate` expects a vec3.") ? .transform : nil
+            case "scale":
+                return require(argTypes[0] == .vec3 || argTypes[0] == .float, "`scale` expects a vec3 or a float.") ? .transform : nil
+            case "rotateX", "rotateY", "rotateZ":
+                return require(argTypes[0] == .float, "`\(name)` expects a float (radians).") ? .transform : nil
+            case "compose":
+                return require(argTypes[0] == .vec3 && argTypes[1] == .quat && argTypes[2] == .vec3,
+                               "`compose` expects (vec3 position, quat rotation, vec3 scale).") ? .transform : nil
+            case "transformPoint", "transformDir":
+                return require(argTypes[0] == .transform && argTypes[1] == .vec3,
+                               "`\(name)` expects (transform, vec3).") ? .vec3 : nil
+            case "transpose":
+                return require(argTypes[0] == .transform, "`transpose` expects a transform.") ? .transform : nil
+            case "quatAxisAngle":
+                return require(argTypes[0] == .float && argTypes[1] == .vec3,
+                               "`quatAxisAngle` expects (float angle, vec3 axis).") ? .quat : nil
+            case "conjugate":
+                return require(argTypes[0] == .quat, "`conjugate` expects a quat.") ? .quat : nil
+            case "mul":
+                switch (argTypes[0], argTypes[1]) {
+                case (.transform, .transform): return .transform
+                case (.transform, .vec4):      return .vec4
+                case (.quat, .quat):           return .quat
+                case (.quat, .vec3):           return .vec3
+                default:
+                    diag(.typeMismatch, "`mul` isn't defined for `\(argTypes[0].name)` and `\(argTypes[1].name)`.", span)
+                    return nil
+                }
+            case "rotate":
+                return require(argTypes[0] == .quat && argTypes[1] == .vec3,
+                               "`rotate` expects (quat, vec3).") ? .vec3 : nil
+            default:
+                return nil
+            }
+        }
+
         switch name {
         case "length":
             guard argTypes[0].isVector else { diag(.typeMismatch, "`length` expects a vector.", span); return nil }
@@ -84,7 +129,8 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
             }
             return .vec3
         case "normalize":
-            guard argTypes[0].isVector else { diag(.typeMismatch, "`normalize` expects a vector.", span); return nil }
+            if argTypes[0] == .quat { return .quat }
+            guard argTypes[0].isVector else { diag(.typeMismatch, "`normalize` expects a vector or quaternion.", span); return nil }
             return argTypes[0]
         default:
             break
@@ -129,6 +175,20 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
             guard let lt = synthesize(l, scope), let rt = synthesize(r, scope) else { return nil }
             guard !lt.isArray, !rt.isArray else {
                 diag(.typeMismatch, "`\(opSymbol(op))` doesn't apply to arrays.", span); return nil
+            }
+            if lt == .transform || lt == .quat || rt == .transform || rt == .quat {
+                guard op == .mul else {
+                    diag(.typeMismatch, "only `*` applies to transforms and quaternions.", span); return nil
+                }
+                switch (lt, rt) {
+                case (.transform, .transform): return .transform
+                case (.transform, .vec4):      return .vec4
+                case (.quat, .quat):           return .quat
+                case (.quat, .vec3):           return .vec3
+                default:
+                    diag(.typeMismatch, "`*` isn't defined for `\(lt.name) * \(rt.name)` (for transform·vec3 use transformPoint / transformDir).", span)
+                    return nil
+                }
             }
             if lt == rt { return lt }
             if lt == .float { return rt }

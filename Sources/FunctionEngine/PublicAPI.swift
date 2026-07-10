@@ -59,6 +59,7 @@ public struct Diagnostic: Sendable, Equatable {
 /// The value/port types the engine can produce.
 public indirect enum ValueType: Sendable, Equatable {
     case float, vec2, vec3, vec4
+    case transform, quat
     case array(ValueType)
 
     public var width: Int {
@@ -67,7 +68,7 @@ public indirect enum ValueType: Sendable, Equatable {
         case .vec2:  return 2
         case .vec3:  return 3
         case .vec4:  return 4
-        case .array: return 0
+        case .transform, .quat, .array: return 0
         }
     }
 
@@ -86,6 +87,8 @@ public indirect enum ValueType: Sendable, Equatable {
         case .vec2:  return "vec2"
         case .vec3:  return "vec3"
         case .vec4:  return "vec4"
+        case .transform: return "transform"
+        case .quat: return "quat"
         case .array(let t): return "\(t.name)[]"
         }
     }
@@ -108,6 +111,8 @@ public enum EngineValue: Sendable, Equatable {
     case vec2(SIMD2<Float>)
     case vec3(SIMD3<Float>)
     case vec4(SIMD4<Float>)
+    case transform(Mat4)
+    case quat(Quat)
     case array([EngineValue])
 
     public var type: ValueType {
@@ -116,6 +121,8 @@ public enum EngineValue: Sendable, Equatable {
         case .vec2:  return .vec2
         case .vec3:  return .vec3
         case .vec4:  return .vec4
+        case .transform: return .transform
+        case .quat: return .quat
         case .array(let els): return .array(els.first?.type ?? .float)
         }
     }
@@ -128,18 +135,26 @@ public enum EngineValue: Sendable, Equatable {
         case .vec2(let v):  return v.x
         case .vec3(let v):  return v.x
         case .vec4(let v):  return v.x
+        case .transform(let m): return m.c0.x
+        case .quat(let q): return q.x
         case .array(let els): return els.first?.scalar ?? 0
         }
     }
 
-    /// Components as a `[Float]` (vectors), `[x]` (float), or per-element scalars
-    /// (arrays).
+    /// Components as a `[Float]` (vectors), `[x]` (float), the 16 column-major
+    /// entries (transform), (x,y,z,w) (quat), or per-element scalars (arrays).
     public var components: [Float] {
         switch self {
         case .float(let x): return [x]
         case .vec2(let v):  return [v.x, v.y]
         case .vec3(let v):  return [v.x, v.y, v.z]
         case .vec4(let v):  return [v.x, v.y, v.z, v.w]
+        case .transform(let m):
+            return [m.c0.x, m.c0.y, m.c0.z, m.c0.w,
+                    m.c1.x, m.c1.y, m.c1.z, m.c1.w,
+                    m.c2.x, m.c2.y, m.c2.z, m.c2.w,
+                    m.c3.x, m.c3.y, m.c3.z, m.c3.w]
+        case .quat(let q): return [q.x, q.y, q.z, q.w]
         case .array(let els): return els.map(\.scalar)
         }
     }

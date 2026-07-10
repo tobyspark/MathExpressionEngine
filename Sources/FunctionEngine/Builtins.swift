@@ -20,6 +20,9 @@ enum FnID: Sendable {
     case clamp, mix, smoothstep
     case length, distance, dot, cross, normalize
     case sum, product, mean, count
+    case identity, translate, scale, rotateX, rotateY, rotateZ, compose
+    case transformPoint, transformDir, transpose
+    case quatAxisAngle, conjugate, mul, rotate
 }
 
 enum Builtins {
@@ -40,10 +43,21 @@ enum Builtins {
         "clamp": 3, "mix": 3, "smoothstep": 3,
         "length": 1, "distance": 2, "dot": 2, "cross": 2, "normalize": 1,
         "sum": 1, "product": 1, "mean": 1, "count": 1,
+        "identity": 0, "translate": 1, "scale": 1,
+        "rotateX": 1, "rotateY": 1, "rotateZ": 1, "compose": 3,
+        "transformPoint": 2, "transformDir": 2, "transpose": 1,
+        "quatAxisAngle": 2, "conjugate": 1, "mul": 2, "rotate": 2,
     ]
 
     /// Array reduction functions.
     static let reductions: Set<String> = ["sum", "product", "mean", "count"]
+
+    /// Transform / quaternion functions (handled by dedicated type rules).
+    static let transformFns: Set<String> = [
+        "identity", "translate", "scale", "rotateX", "rotateY", "rotateZ", "compose",
+        "transformPoint", "transformDir", "transpose", "quatAxisAngle", "conjugate",
+        "mul", "rotate",
+    ]
 
     /// Componentwise unary math functions (`genN → genN`).
     static let genNUnary: Set<String> = [
@@ -100,6 +114,20 @@ enum Builtins {
         case "product": return .product
         case "mean": return .mean
         case "count": return .count
+        case "identity": return .identity
+        case "translate": return .translate
+        case "scale": return .scale
+        case "rotateX": return .rotateX
+        case "rotateY": return .rotateY
+        case "rotateZ": return .rotateZ
+        case "compose": return .compose
+        case "transformPoint": return .transformPoint
+        case "transformDir": return .transformDir
+        case "transpose": return .transpose
+        case "quatAxisAngle": return .quatAxisAngle
+        case "conjugate": return .conjugate
+        case "mul": return .mul
+        case "rotate": return .rotate
         default: return nil
         }
     }
@@ -139,9 +167,12 @@ enum Builtins {
         case .smoothstep:
             let t = Swift.min(Swift.max((a2 - a0) / (a1 - a0), 0), 1)
             return t * t * (3 - 2 * t)
-        // Vector-/array-only ids never reach the scalar path.
+        // Vector-/array-/transform-only ids never reach the scalar path.
         case .length, .distance, .dot, .cross, .normalize,
-             .sum, .product, .mean, .count:
+             .sum, .product, .mean, .count,
+             .identity, .translate, .scale, .rotateX, .rotateY, .rotateZ, .compose,
+             .transformPoint, .transformDir, .transpose,
+             .quatAxisAngle, .conjugate, .mul, .rotate:
             return .nan
         }
     }
@@ -162,7 +193,26 @@ enum Builtins {
         case .distance:  return .float(EngineValue.length(EngineValue.binary(.sub, a0, a1)))
         case .dot:       return .float(EngineValue.dot(a0, a1))
         case .cross:     return EngineValue.cross(a0, a1)
-        case .normalize: return EngineValue.binary(.div, a0, .float(EngineValue.length(a0)))
+        case .normalize:
+            if case .quat(let q) = a0 { return .quat(q.normalized) }
+            return EngineValue.binary(.div, a0, .float(EngineValue.length(a0)))
+
+        case .identity:       return .transform(.identity)
+        case .translate:      return .transform(Mat4.translation(a0.asVec3))
+        case .scale:
+            if case .vec3(let s) = a0 { return .transform(Mat4.scaling(s)) }
+            return .transform(Mat4.scaling(SIMD3(repeating: a0.scalar)))   // uniform
+        case .rotateX:        return .transform(Mat4.rotationX(a0.scalar))
+        case .rotateY:        return .transform(Mat4.rotationY(a0.scalar))
+        case .rotateZ:        return .transform(Mat4.rotationZ(a0.scalar))
+        case .compose:        return .transform(Mat4.compose(position: a0.asVec3, rotation: a1.asQuat, scale: a2.asVec3))
+        case .transformPoint: return .vec3(a0.asMat4.transformPoint(a1.asVec3))
+        case .transformDir:   return .vec3(a0.asMat4.transformDir(a1.asVec3))
+        case .transpose:      return .transform(a0.asMat4.transposed)
+        case .quatAxisAngle:  return .quat(Quat.axisAngle(a0.scalar, a1.asVec3))
+        case .conjugate:      return .quat(a0.asQuat.conjugate)
+        case .mul:            return EngineValue.binary(.mul, a0, a1)
+        case .rotate:         return EngineValue.binary(.mul, a0, a1)   // quat · vec3
         case .count:
             return .float(Float(a0.arrayElements?.count ?? 0))
         case .sum, .product, .mean:

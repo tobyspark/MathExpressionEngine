@@ -20,8 +20,26 @@ extension EngineValue {
         case .vec2(let v):  return SIMD4(v.x, v.y, 0, 0)
         case .vec3(let v):  return SIMD4(v.x, v.y, v.z, 0)
         case .vec4(let v):  return v
-        case .array:        return SIMD4()   // arrays don't take part in lane ops (sema prevents)
+        case .transform, .quat, .array:
+            return SIMD4()   // matrices/quats/arrays don't take part in lane ops (sema prevents)
         }
+    }
+
+    var asVec3: SIMD3<Float> {
+        if case .vec3(let v) = self { return v }
+        let s = wide; return SIMD3(s.x, s.y, s.z)
+    }
+    var asVec4: SIMD4<Float> {
+        if case .vec4(let v) = self { return v }
+        return wide
+    }
+    var asMat4: Mat4 {
+        if case .transform(let m) = self { return m }
+        return .identity
+    }
+    var asQuat: Quat {
+        if case .quat(let q) = self { return q }
+        return .identity
     }
 
     static func make(_ s: SIMD4<Float>, width: Int) -> EngineValue {
@@ -39,10 +57,19 @@ extension EngineValue {
         make(-v.wide, width: v.width)
     }
 
-    /// Elementwise binary op with scalar↔vector broadcast. Mismatched vector
-    /// widths can't occur (the checker forbids them); if they somehow do, the
-    /// wider width wins.
+    /// Elementwise binary op with scalar↔vector broadcast, plus type-directed
+    /// `*` for matrices/quaternions (matmul, matrix·vec4, quat compose,
+    /// quat·vec3). Invalid combinations can't occur (the checker forbids them).
     static func binary(_ op: BinaryOp, _ a: EngineValue, _ b: EngineValue) -> EngineValue {
+        if op == .mul {
+            switch (a, b) {
+            case let (.transform(m), .transform(n)): return .transform(m.mul(n))
+            case let (.transform(m), .vec4(v)):      return .vec4(m.mulVec(v))
+            case let (.quat(p), .quat(q)):           return .quat(p.mul(q))
+            case let (.quat(q), .vec3(v)):           return .vec3(q.rotate(v))
+            default: break
+            }
+        }
         let width = Swift.max(a.width, b.width)
         let sa = a.wide, sb = b.wide
         var out = SIMD4<Float>()
