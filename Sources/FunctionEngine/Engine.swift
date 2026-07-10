@@ -2,18 +2,15 @@
 //  Engine.swift
 //  FunctionEngine
 //
-//  GREEN (TDD): the real scalar Tier-0 pipeline —
-//  lex → parse → infer interface → build an evaluable program.
-//  The program currently wraps the tree-walking reference interpreter; a later
-//  slice lowers to a flat POD tape behind this same surface.
+//  The scalar Tier-0 pipeline. `compile(_:)` lowers to the flat POD tape (the
+//  fast path); `compileReferenceInterpreter(_:)` wraps the tree-walking
+//  interpreter and is used as the differential oracle in tests
+//  (assert tape == reference). Both share the same front end, so they always
+//  agree on the interface and diagnostics.
 //
 
-/// Compile a Function Node source expression.
-///
-/// Free identifiers become the interface's input ports; the value of the
-/// expression is its single output. Errors are reported as diagnostics and, when
-/// any is error-severity, no program is produced (`isValid == false`).
-public func compile(_ source: String) -> CompileResult {
+/// Front end shared by both back ends: lex → parse → infer interface.
+private func frontEnd(_ source: String) -> (ast: Expr?, interface: Interface, diagnostics: [Diagnostic]) {
     var lexer = Lexer(source)
     let (tokens, lexDiagnostics) = lexer.tokenize()
 
@@ -29,15 +26,38 @@ public func compile(_ source: String) -> CompileResult {
         diagnostics += semaDiagnostics
     }
 
-    let hasError = diagnostics.contains { $0.severity == .error }
+    return (ast, interface, diagnostics)
+}
 
-    let program: Program?
-    if let ast, !hasError {
+/// Compile a Function Node source expression to a tape-backed program.
+///
+/// Free identifiers become the interface's input ports; the value of the
+/// expression is its single output. When any diagnostic is error-severity no
+/// program is produced (`isValid == false`).
+public func compile(_ source: String) -> CompileResult {
+    let (ast, interface, diagnostics) = frontEnd(source)
+
+    var program: Program? = nil
+    if let ast, !diagnostics.contains(where: { $0.severity == .error }) {
+        let tape = lower(ast)
+        program = Program(run: { @Sendable (inputs: [String: Float]) throws(EvalError) -> Float in
+            try runTape(tape, inputs)
+        })
+    }
+
+    return CompileResult(interface: interface, diagnostics: diagnostics, program: program)
+}
+
+/// Compile to a program backed by the tree-walking reference interpreter.
+/// Internal: the differential oracle for the tape (see DifferentialTests).
+func compileReferenceInterpreter(_ source: String) -> CompileResult {
+    let (ast, interface, diagnostics) = frontEnd(source)
+
+    var program: Program? = nil
+    if let ast, !diagnostics.contains(where: { $0.severity == .error }) {
         program = Program(run: { @Sendable (inputs: [String: Float]) throws(EvalError) -> Float in
             try ReferenceInterpreter.eval(ast, inputs)
         })
-    } else {
-        program = nil
     }
 
     return CompileResult(interface: interface, diagnostics: diagnostics, program: program)

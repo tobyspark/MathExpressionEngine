@@ -11,14 +11,16 @@ swift test
 
 ## Status
 
-**Slice 1 — scalar Tier-0** (`Float` only), built test-first (red→green):
+**Slice 1 — scalar Tier-0** (`Float` only) + **Slice 2 — POD tape**, built test-first:
 
-- `compile(source) -> CompileResult` — lex → parse → infer interface.
+- `compile(source) -> CompileResult` — lex → parse → infer interface → **lower to
+  a flat POD bytecode tape** (register machine; `Instr`/`Tape` in `Tape.swift`).
 - Free identifiers become the interface's input ports (first-appearance order,
   deduplicated, constants excluded); the expression's value is the single output.
-- `CompileResult.evaluate([name: Float]) throws(EvalError) -> Float` — evaluates
-  via the tree-walking reference interpreter (also the differential oracle for
-  the fast POD-tape engine added in a later slice).
+- `CompileResult.evaluate([name: Float]) throws(EvalError) -> Float` — runs the
+  tape. The tree-walking `ReferenceInterpreter` remains as the **differential
+  oracle**: `DifferentialTests` fuzz random expressions and assert
+  `tape == reference` (bit-identical, NaN-aware).
 - Builtins: trig, `sqrt/abs/exp/log/log2`, `floor/ceil/round/sign/fract`,
   `pow/min/max/mod/step`, `clamp/mix/smoothstep`, `radians/degrees/saturate`;
   constants `pi/tau/e`. `^` is exponent (right-associative); unary minus binds
