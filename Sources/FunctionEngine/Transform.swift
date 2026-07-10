@@ -36,6 +36,9 @@ public struct Mat4: Sendable, Equatable {
                                c2: SIMD4(0, 0, 1, 0),
                                c3: SIMD4(0, 0, 0, 1))
 
+    /// The four columns (column-major; maps directly to `simd_float4x4(_:_:_:_:)`).
+    public var columns: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) { (c0, c1, c2, c3) }
+
     /// Matrix · vector (column-major).
     @inline(__always) func mulVec(_ v: SIMD4<Float>) -> SIMD4<Float> {
         c0 * v.x + c1 * v.y + c2 * v.z + c3 * v.w
@@ -96,6 +99,9 @@ public struct Quat: Sendable, Equatable {
     var w: Float
 
     static let identity = Quat(x: 0, y: 0, z: 0, w: 1)
+
+    /// (x, y, z, w) — maps to `simd_quatf(ix:iy:iz:r:)` / `.vector`.
+    public var components: SIMD4<Float> { SIMD4(x, y, z, w) }
 
     var xyz: SIMD3<Float> { SIMD3(x, y, z) }
     var length: Float { (x * x + y * y + z * z + w * w).squareRoot() }

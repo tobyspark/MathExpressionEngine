@@ -81,6 +81,17 @@ import Testing
         #expect(v.arrayElements?.count == 3)
     }
 
+    @Test func publicAccessorsForBridging() throws {
+        // The Fabric adapter reads these to build simd_float4x4 / simd_quatf.
+        guard case .transform(let m) = try value("identity()") else { #expect(Bool(false)); return }
+        let (c0, _, _, c3) = m.columns
+        #expect(c0 == SIMD4(1, 0, 0, 0))
+        #expect(c3 == SIMD4(0, 0, 0, 1))
+
+        guard case .quat(let q) = try value("quatAxisAngle(0, vec3(0, 1, 0))") else { #expect(Bool(false)); return }
+        #expect(q.components == SIMD4(0, 0, 0, 1))   // zero-angle → identity quaternion
+    }
+
     // MARK: - Errors
 
     @Test func transformTimesVec3IsError() {
