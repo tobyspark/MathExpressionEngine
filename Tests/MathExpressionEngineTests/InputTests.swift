@@ -98,6 +98,58 @@ import Testing
         #expect(out == .array([.float(0), .float(2), .float(4), .float(6)]))
     }
 
+    // MARK: Enumerate — `for (i, p) in arr`
+
+    @Test func enumerateBindsIndexAndElement() throws {
+        // Weight each element by its position, reading a second array in step.
+        let r = compile("in xs: float[]; in ws: float[]; out o = [ x * ws[i] for (i, x) in xs ]")
+        #expect(r.isValid, "\(r.diagnostics)")
+        #expect(r.interface.outputType == .array(.float))
+        let out = try r.evaluateValue(with: [
+            "xs": .array([.float(1), .float(2), .float(3)]),
+            "ws": .array([.float(10), .float(100), .float(1000)]),
+        ])
+        #expect(out == .array([.float(10), .float(200), .float(3000)]))
+    }
+
+    @Test func enumerateIndexIsAFloat() throws {
+        // The index behaves like any number — usable in arithmetic.
+        let r = compile("[ p + i for (i, p) in [10, 10, 10] ]")
+        #expect(r.isValid, "\(r.diagnostics)")
+        let out = try r.evaluateValue([:])
+        #expect(out == .array([.float(10), .float(11), .float(12)]))
+    }
+
+    @Test func enumerateElementTakesElementType() throws {
+        // `p` is a vec3 (element type), `i` a float — `p * i` broadcasts.
+        let r = compile("in pts: vec3[]; out o = [ p * i for (i, p) in pts ]")
+        #expect(r.isValid, "\(r.diagnostics)")
+        #expect(r.interface.outputType == .array(.vec3))
+    }
+
+    @Test func enumeratePatternWithRangeIsError() throws {
+        let r = compile("[ i for (i, p) in 0..<4 ]")
+        #expect(!r.isValid)
+        #expect(r.diagnostics.contains { $0.code == .expectedRange })
+    }
+
+    @Test func enumerateDuplicateNamesIsError() throws {
+        let r = compile("in xs: float[]; out o = [ a for (a, a) in xs ]")
+        #expect(!r.isValid)
+        #expect(r.diagnostics.contains { $0.code == .duplicateBinding })
+    }
+
+    @Test func enumerateTapeMatchesReference() throws {
+        let src = "in xs: vec2[]; out o = [ x * i + x for (i, x) in xs ]"
+        let tape = compile(src)
+        let reference = compileReferenceInterpreter(src)
+        #expect(tape.isValid && reference.isValid, "\(tape.diagnostics)")
+        let inputs: [String: EngineValue] = [
+            "xs": .array([.vec2(SIMD2<Float>(1, 2)), .vec2(SIMD2<Float>(3, 4)), .vec2(SIMD2<Float>(5, 6))])
+        ]
+        #expect(try tape.evaluateValue(with: inputs) == (try reference.evaluateValue(with: inputs)))
+    }
+
     // MARK: Errors
 
     @Test func iteratingANonArrayIsAnError() throws {

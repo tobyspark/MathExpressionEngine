@@ -301,12 +301,47 @@ struct Parser {
         // over an array `[ body for p in arrayExpr ]`.
         if case .identifier("for") = current.kind {
             advance()
-            guard case .identifier(let loopVar) = current.kind else {
-                diagnostics.append(Diagnostic(code: .expectedName, severity: .error,
-                                              message: "Expected a loop variable after `for`.", span: current.span))
-                return nil
+
+            // Loop pattern: a single name, or an enumerate pair `(index, element)`.
+            var indexVar: String? = nil
+            let elemVar: String
+            if case .lparen = current.kind {
+                advance()
+                guard case .identifier(let iv) = current.kind else {
+                    diagnostics.append(Diagnostic(code: .expectedName, severity: .error,
+                                                  message: "Expected an index name in the `(index, element)` pattern.", span: current.span))
+                    return nil
+                }
+                advance()
+                guard case .comma = current.kind else {
+                    diagnostics.append(Diagnostic(code: .expectedName, severity: .error,
+                                                  message: "Expected `,` between the index and element names.", span: current.span))
+                    return nil
+                }
+                advance()
+                guard case .identifier(let ev) = current.kind else {
+                    diagnostics.append(Diagnostic(code: .expectedName, severity: .error,
+                                                  message: "Expected an element name in the `(index, element)` pattern.", span: current.span))
+                    return nil
+                }
+                advance()
+                guard case .rparen = current.kind else {
+                    diagnostics.append(Diagnostic(code: .unmatchedParen, severity: .error,
+                                                  message: "Expected `)` to close the `(index, element)` pattern.", span: current.span))
+                    return nil
+                }
+                advance()
+                indexVar = iv; elemVar = ev
+            } else {
+                guard case .identifier(let lv) = current.kind else {
+                    diagnostics.append(Diagnostic(code: .expectedName, severity: .error,
+                                                  message: "Expected a loop variable after `for`.", span: current.span))
+                    return nil
+                }
+                advance()
+                elemVar = lv
             }
-            advance()
+
             guard case .identifier("in") = current.kind else {
                 diagnostics.append(Diagnostic(code: .expectedName, severity: .error,
                                               message: "Expected `in` after the loop variable.", span: current.span))
@@ -328,7 +363,16 @@ struct Parser {
                 }
                 let span = merge(startSpan, current.span)
                 advance()
-                return .mapComprehension(body: first, loopVar: loopVar, source: source, span)
+                return .mapComprehension(body: first, indexVar: indexVar, elemVar: elemVar, source: source, span)
+            }
+
+            // A numeric range already exposes its index, so the enumerate pattern
+            // is meaningless here.
+            if indexVar != nil {
+                diagnostics.append(Diagnostic(code: .expectedRange, severity: .error,
+                                              message: "An `(index, element)` pattern iterates an array — use a single name for a numeric range.",
+                                              span: merge(startSpan, current.span)))
+                return nil
             }
 
             guard let hi = parseAdditive() else { return nil }
@@ -339,7 +383,7 @@ struct Parser {
             }
             let span = merge(startSpan, current.span)
             advance()
-            return .comprehension(body: first, loopVar: loopVar, lo: source, hi: hi, inclusive: inclusive, span)
+            return .comprehension(body: first, loopVar: elemVar, lo: source, hi: hi, inclusive: inclusive, span)
         }
 
         // Array literal: `[ first (, expr)* ]`

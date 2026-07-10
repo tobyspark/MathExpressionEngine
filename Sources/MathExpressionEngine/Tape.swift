@@ -31,7 +31,7 @@ enum Instr: Sendable {
     case makeArray(dst: Int, srcs: [Int])
     case index(dst: Int, base: Int, idx: Int)
     case comprehension(dst: Int, loopVar: Int, lo: Int, hi: Int, inclusive: Bool, body: [Instr], result: Int)
-    case mapComprehension(dst: Int, loopVar: Int, source: Int, body: [Instr], result: Int)
+    case mapComprehension(dst: Int, indexVar: Int?, elemVar: Int, source: Int, body: [Instr], result: Int)
 }
 
 struct Tape: Sendable {
@@ -159,21 +159,27 @@ private struct Lowerer {
                                                inclusive: inclusive, body: bodyInstructions, result: resultReg))
             return dst
 
-        case .mapComprehension(let bodyExpr, let loopVar, let source, _):
+        case .mapComprehension(let bodyExpr, let indexVar, let elemVar, let source, _):
             let sourceReg = lower(source)
-            let loopVarReg = newRegister()
+            let elemReg = newRegister()
+            let indexReg: Int? = indexVar != nil ? newRegister() : nil
 
-            let prev = localRegister[loopVar]
-            localRegister[loopVar] = loopVarReg
+            let prevElem = localRegister[elemVar]
+            localRegister[elemVar] = elemReg
+            var prevIndex: Int? = nil
+            if let indexVar { prevIndex = localRegister[indexVar]; localRegister[indexVar] = indexReg! }
+
             let saved = instructions
             instructions = []
             let resultReg = lower(bodyExpr)
             let bodyInstructions = instructions
             instructions = saved
-            localRegister[loopVar] = prev
+
+            localRegister[elemVar] = prevElem
+            if let indexVar { localRegister[indexVar] = prevIndex }
 
             let dst = newRegister()
-            instructions.append(.mapComprehension(dst: dst, loopVar: loopVarReg, source: sourceReg,
+            instructions.append(.mapComprehension(dst: dst, indexVar: indexReg, elemVar: elemReg, source: sourceReg,
                                                   body: bodyInstructions, result: resultReg))
             return dst
 
@@ -292,12 +298,13 @@ private func executeInstrs(_ instructions: [Instr], _ r: inout [EngineValue], ba
                 r[base + dst] = .array(els)
             }
 
-        case .mapComprehension(let dst, let loopVar, let source, let body, let result):
+        case .mapComprehension(let dst, let indexVar, let elemVar, let source, let body, let result):
             let els = r[base + source].arrayElements ?? []
             var out: [EngineValue] = []
             out.reserveCapacity(els.count)
-            for el in els {
-                r[base + loopVar] = el
+            for (k, el) in els.enumerated() {
+                if let indexVar { r[base + indexVar] = .float(Float(k)) }
+                r[base + elemVar] = el
                 try executeInstrs(body, &r, base: base, constants: constants)
                 out.append(r[base + result])
             }

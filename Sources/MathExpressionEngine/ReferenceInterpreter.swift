@@ -88,14 +88,15 @@ enum ReferenceInterpreter {
             }
             return .array(els)
 
-        case .mapComprehension(let bodyExpr, let loopVar, let source, _):
+        case .mapComprehension(let bodyExpr, let indexVar, let elemVar, let source, _):
             let s = try eval(source, inputs, locals)
             let els = s.arrayElements ?? []
             var out: [EngineValue] = []
             out.reserveCapacity(els.count)
             var scoped = locals
-            for el in els {
-                scoped[loopVar] = el
+            for (k, el) in els.enumerated() {
+                if let indexVar { scoped[indexVar] = .float(Float(k)) }
+                scoped[elemVar] = el
                 out.append(try eval(bodyExpr, inputs, scoped))
             }
             return .array(out)

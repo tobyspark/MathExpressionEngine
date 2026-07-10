@@ -301,14 +301,21 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
             guard let bt = synthesize(bodyExpr, inner) else { return nil }
             return .array(bt)
 
-        case .mapComprehension(let bodyExpr, let loopVar, let source, let span):
+        case .mapComprehension(let bodyExpr, let indexVar, let elemVar, let source, let span):
             guard let st = synthesize(source, scope) else { return nil }
             guard case .array(let elem) = st else {
-                diag(.notAnArray, "`for \(loopVar) in …` needs an array to iterate — got `\(st.name)`.", span)
+                diag(.notAnArray, "`for \(elemVar) in …` needs an array to iterate — got `\(st.name)`.", span)
                 return nil
             }
             var inner = scope
-            inner[loopVar] = elem
+            inner[elemVar] = elem
+            if let indexVar {
+                if indexVar == elemVar {
+                    diag(.duplicateBinding, "`\(indexVar)` is bound twice in the `(index, element)` pattern.", span)
+                    return nil
+                }
+                inner[indexVar] = .float
+            }
             guard let bt = synthesize(bodyExpr, inner) else { return nil }
             return .array(bt)
 

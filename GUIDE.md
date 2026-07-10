@@ -132,13 +132,19 @@ in spin: float;
 out spun = [ rotateY(spin) * m for m in placements ]     // spin each instance
 ```
 
-Looping directly gives you the **element**. When you need its **position** —
-to offset by index, or read a second array in step — loop over a range with
-`count` instead and index in:
+Looping directly gives you the **element**. When you also need its **position** —
+to offset by index, or read a second array in step — name both with an
+`(index, element)` pattern:
+
+```
+in points:  vec3[];
+in weights: float[];
+out weighted = [ p * weights[i] for (i, p) in points ]   // index first, element second
+```
 
 ```
 in placements: transform[];
-out spread = [ translate(vec3(i, 0, 0)) * placements[i] for i in 0..<count(placements) ]
+out spread = [ translate(vec3(i, 0, 0)) * m for (i, m) in placements ]
 ```
 
 Reading past the end of an incoming array is reported as an *"index out of
@@ -339,10 +345,12 @@ The loop variable (`i` above) is a number you can use anywhere in the body:
 A comprehension can also loop over an **existing array** instead of a range —
 `for p in arr` — binding each element in turn (see
 [Taking an array in](#inputs-outputs-and-locals)). The range form gives you the
-position `i`; the array form gives you the element `p`.
+position `i`; the array form gives you the element `p`; and an
+`(index, element)` pattern gives you **both** at once:
 
 ```
-[ n * n for n in [1, 2, 3, 4] ]      // 1, 4, 9, 16
+[ n * n for n in [1, 2, 3, 4] ]          // element only:  1, 4, 9, 16
+[ p * i for (i, p) in [5, 5, 5, 5] ]     // index + element: 0, 5, 10, 15
 ```
 
 **Read** an element by index with `[...]` (indices start at `0`):
