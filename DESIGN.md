@@ -44,10 +44,12 @@ Design commitments:
   indexing
   `a[i]`; and reductions `sum` / `product` / `mean` / `count`, plus `min` / `max`
   over an array (componentwise for vectors).
-- **Inputs**: free identifiers are `float` input ports; `in name: Type` declares a
-  typed input (`vec3`, `transform`, `quat`, `vec3[]`, …). Inference never widens
-  an input beyond `float`, so declaration is the single escape hatch — and the
-  all-scalar default keeps working with no `in` at all.
+- **Inputs**: free identifiers are `float` input ports; a typed input is declared
+  either with an `in name: Type` statement or inline at a single use site as
+  `name: Type` (`vec3`, `transform`, `quat`, `vec3[]`, …). Inference never widens
+  an input beyond `float`, so a declaration is the single escape hatch — and the
+  all-scalar default keeps working with no annotation at all. An inline-typed name
+  must be used exactly once; multiple uses require the `in` form.
 - **Statements**: `in` typed-input declarations, `let` locals, and multiple named
   `out` outputs; a bare expression is the implicit `result` output.
 - **Builtins**: trig, exp/log, rounding, and multi-argument math (`min` / `max` /

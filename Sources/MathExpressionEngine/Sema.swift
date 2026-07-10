@@ -12,6 +12,9 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
     var diagnostics: [Diagnostic] = []
     var inputs: [InputPort] = []
     var inputSeen = Set<String>()
+    // Names given a type inline (`p: vec3`). Such a name must be used exactly
+    // once; a second use (bare or typed) is an error asking for an `in` decl.
+    var inlineTypedNames = Set<String>()
 
     // Declared inputs (`in name: Type`) — collected first so their types are
     // known wherever they are used, and registered as ports in declaration order.
@@ -211,10 +214,39 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
                 diag(.useBeforeDefinition, "`\(name)` is used before it is defined.", span)
                 return nil
             }
-            if let t = declaredInputTypes[name] { return t }    // declared input
+            if let t = declaredInputTypes[name] {               // declared / inline-typed input
+                if inlineTypedNames.contains(name) {
+                    diag(.duplicateBinding, "`\(name)` is typed inline but used more than once — declare it once with `in \(name): \(t.name)`.", span)
+                }
+                return t
+            }
             if Builtins.isConstant(name) { return .float }
             if inputSeen.insert(name).inserted { inputs.append(InputPort(name: name, type: .float)) }
             return .float
+
+        case .typedVariable(let name, let type, let span):
+            if let bound = scope[name] {
+                diag(.duplicateBinding, "`\(name)` is a loop variable here, so it can't be given an input type.", span)
+                return bound
+            }
+            if letNames.contains(name) {
+                diag(.duplicateBinding, "`\(name)` is a `let` local, so it can't be given an input type.", span)
+                return letTypes[name] ?? type
+            }
+            if Builtins.isConstant(name) {
+                diag(.duplicateBinding, "`\(name)` is a built-in constant, so it can't be a typed input.", span)
+                return .float
+            }
+            if inputSeen.contains(name) {
+                // Already an input — an `in` declaration, or an earlier use of the name.
+                diag(.duplicateBinding, "`\(name)` is used more than once — declare it once with `in \(name): \(type.name)` instead of typing it inline.", span)
+                return declaredInputTypes[name] ?? type
+            }
+            declaredInputTypes[name] = type
+            inlineTypedNames.insert(name)
+            inputSeen.insert(name)
+            inputs.append(InputPort(name: name, type: type))
+            return type
 
         case .negate(let x, let span):
             guard let t = synthesize(x, scope) else { return nil }

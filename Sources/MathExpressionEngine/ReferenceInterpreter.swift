@@ -30,7 +30,7 @@ enum ReferenceInterpreter {
         case .number(let value, _):
             return .float(value)
 
-        case .variable(let name, _):
+        case .variable(let name, _), .typedVariable(let name, _, _):
             if let local = locals[name] { return local }
             if let constant = Builtins.constants[name] { return .float(constant) }
             guard let value = inputs[name] else { throw EvalError.missingInput(name) }

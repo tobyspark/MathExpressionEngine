@@ -13,6 +13,7 @@ enum BinaryOp: Sendable, Equatable {
 indirect enum Expr: Sendable {
     case number(Float, Span)
     case variable(String, Span)
+    case typedVariable(String, ValueType, Span)   // inline-typed input, e.g. `p: vec3`
     case call(String, [Expr], Span)
     case negate(Expr, Span)
     case binary(BinaryOp, Expr, Expr, Span)
@@ -26,6 +27,7 @@ indirect enum Expr: Sendable {
         switch self {
         case .number(_, let s),
              .variable(_, let s),
+             .typedVariable(_, _, let s),
              .call(_, _, let s),
              .negate(_, let s),
              .binary(_, _, _, let s),

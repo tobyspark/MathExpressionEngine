@@ -106,6 +106,23 @@ case needs no ceremony. The types you can declare are the same ones the language
 uses everywhere: `float`, `vec2`, `vec3`, `vec4`, `transform`, `quat`, and arrays
 like `vec3[]` or `float[]`.
 
+**Typing a name inline.** For a one-off you can give a name its type right where
+you use it — the same `name: Type` syntax, no separate `in` line:
+
+```
+(p: vec3) * 2                 // one vec3 input port, p
+count(points: vec3[])         // one vec3[] input port, points
+```
+
+This is shorthand for a single use. If you refer to the same name more than once,
+give it a proper `in` declaration instead — an inline-typed name used twice is an
+error:
+
+```
+(p: vec3) + p                 // ✗ p is used twice — declare `in p: vec3;`
+in p: vec3; out o = p + p     // ✓
+```
+
 **Taking an array in.** Declare an array input and you can measure, index, and
 loop over it:
 

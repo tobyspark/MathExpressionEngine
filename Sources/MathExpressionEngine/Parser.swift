@@ -440,6 +440,12 @@ struct Parser {
                 let end = current.span; advance()
                 return .call(name, args, merge(s, end))
             }
+            // Inline typed input: `name: Type` (e.g. `p: vec3`).
+            if case .colon = current.kind {
+                advance()
+                guard let type = parseType() else { return nil }
+                return .typedVariable(name, type, merge(s, current.span))
+            }
             return .variable(name, s)
 
         case .lparen:

@@ -90,7 +90,7 @@ private struct Lowerer {
             instructions.append(.loadConst(dst: dst, constIndex: constSlot(value)))
             return dst
 
-        case .variable(let name, _):
+        case .variable(let name, _), .typedVariable(let name, _, _):
             if let reg = localRegister[name] { return reg }
             let dst = newRegister()
             if let constant = Builtins.constants[name] {
