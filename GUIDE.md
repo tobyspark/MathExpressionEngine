@@ -380,7 +380,7 @@ component. Everything takes and returns numbers unless noted otherwise.
 |----------|---------|
 | `sin(x)` `cos(x)` `tan(x)` | trig (radians), *componentwise* |
 | `asin(x)` `acos(x)` `atan(x)` | inverse trig, *componentwise* |
-| `atan2(y, x)` | angle of the vector (x, y) |
+| `atan2(y, x)` | angle of the vector (x, y), *componentwise* |
 | `radians(d)` `degrees(r)` | convert degrees↔radians, *componentwise* |
 
 **Powers and logs**
@@ -391,7 +391,7 @@ component. Everything takes and returns numbers unless noted otherwise.
 | `exp(x)` | e to the x, *componentwise* |
 | `log(x)` | natural log, *componentwise* |
 | `log2(x)` | base-2 log, *componentwise* |
-| `pow(a, b)` | a to the b (or use the `^` operator) |
+| `pow(a, b)` | a to the b (or use the `^` operator), *componentwise* |
 
 **Rounding and sign**
 
@@ -406,14 +406,17 @@ component. Everything takes and returns numbers unless noted otherwise.
 
 | Function | Meaning |
 |----------|---------|
-| `min(a, b)` `max(a, b)` | smaller / larger |
-| `clamp(x, lo, hi)` | keep x within [lo, hi] |
+| `min(a, b)` `max(a, b)` | smaller / larger, *componentwise* |
+| `clamp(x, lo, hi)` | keep x within [lo, hi], *componentwise* |
 | `saturate(x)` | clamp to [0, 1], *componentwise* |
-| `mix(a, b, t)` | linear blend: `a` at t=0, `b` at t=1 |
-| `step(edge, x)` | 0 below the edge, 1 at/above |
-| `smoothstep(lo, hi, x)` | smooth 0→1 ramp between lo and hi |
-| `mod(a, b)` | remainder, sign follows `a` (same as the `%` operator) |
-| `wrap(a, b)` | wraps `a` into `[0, b)` — stays positive for negative `a` |
+| `mix(a, b, t)` | linear blend: `a` at t=0, `b` at t=1, *componentwise* |
+| `step(edge, x)` | 0 below the edge, 1 at/above, *componentwise* |
+| `smoothstep(lo, hi, x)` | smooth 0→1 ramp between lo and hi, *componentwise* |
+| `mod(a, b)` | remainder, sign follows `a` (same as the `%` operator), *componentwise* |
+| `wrap(a, b)` | wraps `a` into `[0, b)` — stays positive for negative `a`, *componentwise* |
+
+For these, vectors must share a size and a plain number broadcasts across the
+components — so `clamp(v, 0, 1)` clamps every component of `v` to `[0, 1]`.
 
 **Vectors**
 
@@ -497,10 +500,6 @@ The language is deliberately small. Things that are **not** in it (yet):
   [Inputs](#inputs-outputs-and-locals)).
 - **No `if` / conditionals, comparisons, or booleans.** Reach for `step`,
   `clamp`, `mix`, and `smoothstep` to get branch-like behaviour smoothly.
-- **A few multi-argument maths functions are numbers-only** right now — `min`,
-  `max`, `clamp`, `mix`, `smoothstep`, `step`, `pow`, `atan2`, `mod`, `wrap`. Give them
-  plain numbers, not vectors. (The `^` and `%` *operators*, unlike the `pow` and
-  `mod` functions, do work on vectors component-by-component.)
 - **No time variable is built in.** If you want animation, wire a time value into
   an input port (e.g. call it `t`) and use it.
 - **Arrays are homogeneous** — every element must be the same type — and an empty

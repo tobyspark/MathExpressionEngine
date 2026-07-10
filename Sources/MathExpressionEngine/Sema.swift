@@ -161,10 +161,23 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
         if Builtins.genNUnary.contains(name) {
             return argTypes[0]
         }
-        if Builtins.scalarMulti.contains(name) {
-            guard argTypes.allSatisfy({ $0 == .float }) else {
-                diag(.typeMismatch, "`\(name)` expects scalar arguments in this version.", span); return nil
+        if Builtins.genNMulti.contains(name) {
+            // Componentwise: args are floats and/or vectors; all vectors must
+            // share one width, and scalars broadcast to it.
+            var width: Int? = nil
+            for t in argTypes {
+                if t == .float { continue }
+                guard t.isVector else {
+                    diag(.typeMismatch, "`\(name)` works on numbers and vectors, not `\(t.name)`.", span)
+                    return nil
+                }
+                if let w = width, w != t.width {
+                    diag(.typeMismatch, "`\(name)` needs its vector arguments to be the same size — got \(argTypes.map(\.name).joined(separator: ", ")).", span)
+                    return nil
+                }
+                width = t.width
             }
+            if let w = width { return ValueType.ofWidth(w) }
             return .float
         }
 

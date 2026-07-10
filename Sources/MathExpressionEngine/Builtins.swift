@@ -66,8 +66,9 @@ enum Builtins {
         "radians", "degrees", "saturate",
     ]
 
-    /// Multi-argument math functions that require scalar args.
-    static let scalarMulti: Set<String> = [
+    /// Multi-argument math functions applied componentwise over vectors, with
+    /// scalar↔vector broadcast (all vector args must share one width).
+    static let genNMulti: Set<String> = [
         "atan2", "pow", "min", "max", "mod", "wrap", "step", "clamp", "mix", "smoothstep",
     ]
 
@@ -225,8 +226,14 @@ enum Builtins {
             if id == .mean { acc = EngineValue.binary(.div, acc, .float(Float(els.count))) }
             return acc
         case .atan2, .pow, .min, .max, .mod, .wrap, .step, .clamp, .mix, .smoothstep:
-            // Scalar-only multi-arg: args are floats.
-            return .float(evaluate(id, a0.scalar, a1.scalar, a2.scalar))
+            // Componentwise over the widest argument; scalars broadcast (a
+            // scalar's `wide` is splatted across all lanes).
+            let w = Swift.max(a0.width, a1.width, a2.width)
+            if w <= 1 { return .float(evaluate(id, a0.scalar, a1.scalar, a2.scalar)) }
+            let s0 = a0.wide, s1 = a1.wide, s2 = a2.wide
+            var out = SIMD4<Float>()
+            for i in 0..<w { out[i] = evaluate(id, s0[i], s1[i], s2[i]) }
+            return EngineValue.make(out, width: w)
         default:
             // Componentwise unary genN.
             let s = a0.wide

@@ -95,8 +95,41 @@ import Testing
         #expect(r.diagnostics.contains { $0.code == .typeMismatch })
     }
 
-    @Test func scalarMultiRejectsVectors() {
-        let r = compile("min(vec2(1, 2), vec2(3, 4))")
+    // Multi-argument math is componentwise over vectors (matching width), with
+    // scalar↔vector broadcast.
+
+    @Test func multiArgComponentwiseOverVectors() throws {
+        #expect(try value("min(vec3(1, 5, 3), vec3(4, 2, 6))") == .vec3(SIMD3(1, 2, 3)))
+        #expect(try value("max(vec3(1, 5, 3), vec3(4, 2, 6))") == .vec3(SIMD3(4, 5, 6)))
+        #expect(try value("clamp(vec3(-1, 0.5, 2), 0, 1)") == .vec3(SIMD3(0, 0.5, 1)))
+        #expect(try value("clamp(vec3(5, 5, 5), vec3(0, 0, 0), vec3(1, 10, 3))") == .vec3(SIMD3(1, 5, 3)))
+        #expect(try value("mix(vec3(0, 0, 0), vec3(10, 20, 30), 0.5)") == .vec3(SIMD3(5, 10, 15)))
+        #expect(try value("mix(vec3(0, 0, 0), vec3(8, 8, 8), vec3(0.5, 0.25, 0.75))") == .vec3(SIMD3(4, 2, 6)))
+        #expect(try value("pow(vec2(2, 3), 2)") == .vec2(SIMD2(4, 9)))
+        #expect(try value("mod(vec3(5, 6, 7), 3)") == .vec3(SIMD3(2, 0, 1)))
+        #expect(try value("wrap(vec2(-1, -4), 3)") == .vec2(SIMD2(2, 2)))
+        #expect(try value("step(0.5, vec3(0, 0.5, 1))") == .vec3(SIMD3(0, 1, 1)))
+        #expect(try value("smoothstep(0, 1, vec2(0.5, 1))") == .vec2(SIMD2(0.5, 1)))
+    }
+
+    @Test func multiArgBroadcastsScalars() throws {
+        #expect(try value("max(vec2(1, 2), 1.5)") == .vec2(SIMD2(1.5, 2)))
+        #expect(try value("min(vec2(1, 2), 1.5)") == .vec2(SIMD2(1, 1.5)))
+    }
+
+    @Test func multiArgInfersVectorOutputType() {
+        #expect(compile("clamp(vec3(-1, 0.5, 2), 0, 1)").interface.outputType == .vec3)
+        #expect(compile("min(3, 5)").interface.outputType == .float)   // scalar still scalar
+    }
+
+    @Test func multiArgRejectsMismatchedWidths() {
+        let r = compile("min(vec2(1, 2), vec3(1, 2, 3))")
+        #expect(!r.isValid)
+        #expect(r.diagnostics.contains { $0.code == .typeMismatch })
+    }
+
+    @Test func multiArgRejectsNonVectorArgs() {
+        let r = compile("max(identity(), 1)")
         #expect(!r.isValid)
         #expect(r.diagnostics.contains { $0.code == .typeMismatch })
     }

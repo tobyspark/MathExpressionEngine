@@ -46,10 +46,12 @@ Design commitments:
   all-scalar default keeps working with no `in` at all.
 - **Statements**: `in` typed-input declarations, `let` locals, and multiple named
   `out` outputs; a bare expression is the implicit `result` output.
-- **Builtins**: trig, exp/log, rounding, `clamp` / `mix` / `smoothstep`, etc.
-  (componentwise over vectors); vector algebra `length` / `dot` / `cross` /
-  `normalize` / `distance`; constants `pi` / `tau` / `e`. `^` is exponentiation
-  (right-associative); unary minus binds looser than `^`, so `-2^2 == -4`.
+- **Builtins**: trig, exp/log, rounding, and multi-argument math (`min` / `max` /
+  `clamp` / `mix` / `smoothstep` / `step` / `pow` / `mod` / `wrap` / `atan2`) — all
+  componentwise over vectors with scalar↔vector broadcast; vector algebra
+  `length` / `dot` / `cross` / `normalize` / `distance`; constants `pi` / `tau` /
+  `e`. `^` is exponentiation (right-associative); unary minus binds looser than
+  `^`, so `-2^2 == -4`.
 - **Diagnostics** carry source spans: type errors, wrong arity, invalid swizzles,
   unknown names (with a "did you mean …?" suggestion), and array/output rules.
   Advisory warnings cover literal division by zero and unused `let` bindings, and
@@ -104,9 +106,9 @@ convenience for the all-scalar case.
 
 Roughly in priority order:
 
-1. **Vector/array-aware multi-arg builtins.** `min` / `max` / `clamp` / `mix` /
-   `smoothstep` / `step` are scalar-only today; typed inputs make componentwise
-   versions (and vector reductions like `max` over an array) the obvious next want.
+1. **Array min/max reductions.** Multi-argument math is now componentwise over
+   vectors; the remaining gap is `min` / `max` as *reductions* over an array
+   (largest/smallest element), pairing with `sum` / `product` / `mean`.
 2. **Direct element+index iteration.** The array comprehension gives either the
    element (`for p in arr`) or the index (`for i in 0..<count(arr)`); an
    enumerate-style form yielding both would remove the index/`count` boilerplate.
