@@ -5,12 +5,12 @@ import PackageDescription
 // No dependency on Fabric / Metal / Satin, so `swift test` runs the whole
 // correctness suite on a plain toolchain (macOS or Linux), no GPU required.
 let package = Package(
-    name: "FunctionEngine",
+    name: "MathExpressionEngine",
     products: [
-        .library(name: "FunctionEngine", targets: ["FunctionEngine"]),
+        .library(name: "MathExpressionEngine", targets: ["MathExpressionEngine"]),
     ],
     targets: [
-        .target(name: "FunctionEngine"),
-        .testTarget(name: "FunctionEngineTests", dependencies: ["FunctionEngine"]),
+        .target(name: "MathExpressionEngine"),
+        .testTarget(name: "MathExpressionEngineTests", dependencies: ["MathExpressionEngine"]),
     ]
 )

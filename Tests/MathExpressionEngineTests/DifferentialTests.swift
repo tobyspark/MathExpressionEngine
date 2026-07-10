@@ -1,5 +1,5 @@
 import Testing
-@testable import FunctionEngine
+@testable import MathExpressionEngine
 
 // Differential testing: the fast POD tape (`compile`) must agree with the
 // tree-walking reference interpreter (`compileReferenceInterpreter`) on random

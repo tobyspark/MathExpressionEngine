@@ -1,6 +1,6 @@
 //
 //  Suggestions.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  Small edit-distance helper for "did you mean …?" diagnostics.
 //

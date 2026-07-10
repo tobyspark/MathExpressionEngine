@@ -1,6 +1,6 @@
 //
 //  Value.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  Operations on `EngineValue` shared by the reference interpreter and the tape
 //  (a single, centralized value-math implementation). Elementwise ops broadcast

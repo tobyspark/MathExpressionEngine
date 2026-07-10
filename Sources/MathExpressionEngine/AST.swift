@@ -1,6 +1,6 @@
 //
 //  AST.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  Expression AST for the scalar Tier-0 slice. Sendable so a compiled program's
 //  evaluator closure can capture it across threads (the array/parallel path in

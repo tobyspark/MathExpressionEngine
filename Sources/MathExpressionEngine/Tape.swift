@@ -1,6 +1,6 @@
 //
 //  Tape.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  The bytecode: a register machine over `EngineValue` registers. Scalars/vectors
 //  are trivial; `.array` values are heap-backed, so the register file is a normal

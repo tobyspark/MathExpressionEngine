@@ -1,5 +1,5 @@
 import Testing
-@testable import FunctionEngine
+@testable import MathExpressionEngine
 
 /// Metamorphic / algebraic invariants — assert relationships that must hold for
 /// any inputs, without hand-computing expected values.

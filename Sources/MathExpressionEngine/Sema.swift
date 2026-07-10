@@ -1,6 +1,6 @@
 //
 //  Sema.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  Resolution + bottom-up type synthesis over the function body. Variables are
 //  `float` (vector inputs are deferred), comprehension loop variables are `float`,

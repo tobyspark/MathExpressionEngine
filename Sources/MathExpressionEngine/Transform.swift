@@ -1,6 +1,6 @@
 //
 //  Transform.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  Portable column-major 4×4 matrix and quaternion, laid out to match Apple's
 //  `simd_float4x4` (columns) and `simd_quatf` (x,y,z,w) so the Fabric boundary is

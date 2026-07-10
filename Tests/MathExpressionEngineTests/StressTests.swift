@@ -1,5 +1,5 @@
 import Testing
-@testable import FunctionEngine
+@testable import MathExpressionEngine
 
 // Stress the eval path: many evaluations across expressions with differing
 // register counts, each checked against the reference interpreter — guarding the

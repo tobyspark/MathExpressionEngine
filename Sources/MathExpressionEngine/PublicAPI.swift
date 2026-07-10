@@ -1,6 +1,6 @@
 //
 //  PublicAPI.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  The public surface consumed by the Fabric Function Node.
 //

@@ -1,6 +1,6 @@
 //
 //  Lexer.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  Single-pass tokenizer. Every token carries a `Span` so diagnostics land at
 //  the exact site of a problem.

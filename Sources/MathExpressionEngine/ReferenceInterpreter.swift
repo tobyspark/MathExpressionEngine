@@ -1,6 +1,6 @@
 //
 //  ReferenceInterpreter.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  Tree-walking evaluator over the function body, producing typed `EngineValue`s.
 //  Uses the shared value-math in Value.swift / Builtins, and stays on as the

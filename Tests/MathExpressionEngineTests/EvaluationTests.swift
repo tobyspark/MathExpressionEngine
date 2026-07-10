@@ -1,5 +1,5 @@
 import Testing
-@testable import FunctionEngine
+@testable import MathExpressionEngine
 
 private func eval(_ src: String, _ inputs: [String: Float] = [:]) throws -> Float {
     let r = compile(src)

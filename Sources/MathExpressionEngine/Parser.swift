@@ -1,6 +1,6 @@
 //
 //  Parser.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  Recursive-descent / precedence-climbing parser for the scalar Tier-0 grammar.
 //  Precedence (low→high): + -  |  * / %  |  unary -  |  ^ (right-assoc)  |  call / primary.

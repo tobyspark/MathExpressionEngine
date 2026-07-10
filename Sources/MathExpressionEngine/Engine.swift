@@ -1,6 +1,6 @@
 //
 //  Engine.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  The pipeline. `compile(_:)` lowers to the flat POD tape (fast path);
 //  `compileReferenceInterpreter(_:)` wraps the tree-walking interpreter and is

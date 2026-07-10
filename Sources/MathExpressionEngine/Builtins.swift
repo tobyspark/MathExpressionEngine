@@ -1,6 +1,6 @@
 //
 //  Builtins.swift
-//  FunctionEngine
+//  MathExpressionEngine
 //
 //  Constants, function identities (`FnID`), arities, the scalar math
 //  implementation, and a typed `evaluateValue` over `EngineValue` (shared by the

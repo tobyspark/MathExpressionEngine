@@ -1,5 +1,5 @@
 import Testing
-@testable import FunctionEngine
+@testable import MathExpressionEngine
 
 // Diagnostics & guardrail hardening.
 @Suite struct HardeningTests {

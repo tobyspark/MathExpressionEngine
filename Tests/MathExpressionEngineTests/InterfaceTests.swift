@@ -1,5 +1,5 @@
 import Testing
-@testable import FunctionEngine
+@testable import MathExpressionEngine
 
 /// The core "expression is the interface" claim, asserted as data: free
 /// identifiers become input ports, in first-appearance order, deduplicated,
