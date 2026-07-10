@@ -2,16 +2,30 @@
 //  Transform.swift
 //  MathExpressionEngine
 //
-//  Portable column-major 4×4 matrix and quaternion, laid out to match Apple's
-//  `simd_float4x4` (columns) and `simd_quatf` (x,y,z,w) so the Fabric boundary is
-//  a trivial reinterpret. No dependency on the Apple `simd` module — built on
-//  stdlib `SIMD` types so the engine stays cross-platform / Linux-testable.
+//  Transform (4×4 matrix) and quaternion types for the engine. These are Apple's
+//  `simd_float4x4` and `simd_quatf` directly, so an `EngineValue.transform` /
+//  `.quat` payload *is* the Fabric port value — the boundary is a zero-copy
+//  reinterpret rather than a field-by-field marshal.
 //
-//  Scope note: general 4×4 `inverse` and quaternion `slerp` are not yet
-//  implemented.
+//  The engine's algebra (translate / scale / rotate / compose / transformPoint,
+//  quaternion axis-angle / rotate / to-matrix) is provided below as extensions,
+//  so the rest of the engine keeps calling `Mat4.translation(_:)`, `q.rotate(_:)`
+//  &c. unchanged. Matrix composition and matrix·vector delegate to simd's
+//  operators; the builders and quaternion formulas keep their explicit,
+//  column-major / (x,y,z,w) definitions so behaviour is identical to before.
+//
+//  Scope note: general 4×4 `inverse` and quaternion `slerp` are available from
+//  simd (`.inverse`, `simd_slerp`) but not yet exposed in the language.
 //
 
 import Foundation
+import simd
+
+/// A 4×4 transform — Apple's column-major `simd_float4x4`.
+public typealias Mat4 = simd_float4x4
+
+/// A quaternion (x, y, z, w) — Apple's `simd_quatf`.
+public typealias Quat = simd_quatf
 
 @inline(__always) func cross3(_ a: SIMD3<Float>, _ b: SIMD3<Float>) -> SIMD3<Float> {
     SIMD3(a.y * b.z - a.z * b.y,
@@ -24,66 +38,49 @@ import Foundation
     return l > 0 ? v / l : v
 }
 
-/// Column-major 4×4 matrix (each stored value is a column).
-public struct Mat4: Sendable, Equatable {
-    var c0: SIMD4<Float>
-    var c1: SIMD4<Float>
-    var c2: SIMD4<Float>
-    var c3: SIMD4<Float>
+// MARK: - Mat4 (simd_float4x4)
 
-    static let identity = Mat4(c0: SIMD4(1, 0, 0, 0),
-                               c1: SIMD4(0, 1, 0, 0),
-                               c2: SIMD4(0, 0, 1, 0),
-                               c3: SIMD4(0, 0, 0, 1))
+extension Mat4 {
+    static let identity = matrix_identity_float4x4
 
-    /// The four columns (column-major; maps directly to `simd_float4x4(_:_:_:_:)`).
-    public var columns: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) { (c0, c1, c2, c3) }
+    // `columns` and `init(columns:)` are native on simd_float4x4.
 
     /// Matrix · vector (column-major).
-    @inline(__always) func mulVec(_ v: SIMD4<Float>) -> SIMD4<Float> {
-        c0 * v.x + c1 * v.y + c2 * v.z + c3 * v.w
-    }
+    @inline(__always) func mulVec(_ v: SIMD4<Float>) -> SIMD4<Float> { self * v }
 
-    /// Matrix · matrix.
-    func mul(_ o: Mat4) -> Mat4 {
-        Mat4(c0: mulVec(o.c0), c1: mulVec(o.c1), c2: mulVec(o.c2), c3: mulVec(o.c3))
-    }
+    /// Matrix · matrix (standard column-major composition).
+    func mul(_ o: Mat4) -> Mat4 { self * o }
 
-    var transposed: Mat4 {
-        Mat4(c0: SIMD4(c0.x, c1.x, c2.x, c3.x),
-             c1: SIMD4(c0.y, c1.y, c2.y, c3.y),
-             c2: SIMD4(c0.z, c1.z, c2.z, c3.z),
-             c3: SIMD4(c0.w, c1.w, c2.w, c3.w))
-    }
+    var transposed: Mat4 { self.transpose }
 
     func transformPoint(_ p: SIMD3<Float>) -> SIMD3<Float> {
-        let r = mulVec(SIMD4(p.x, p.y, p.z, 1))
+        let r = self * SIMD4(p.x, p.y, p.z, 1)
         return SIMD3(r.x, r.y, r.z)
     }
     func transformDir(_ v: SIMD3<Float>) -> SIMD3<Float> {
-        let r = mulVec(SIMD4(v.x, v.y, v.z, 0))
+        let r = self * SIMD4(v.x, v.y, v.z, 0)
         return SIMD3(r.x, r.y, r.z)
     }
 
     // MARK: Builders
 
     static func translation(_ t: SIMD3<Float>) -> Mat4 {
-        Mat4(c0: SIMD4(1, 0, 0, 0), c1: SIMD4(0, 1, 0, 0), c2: SIMD4(0, 0, 1, 0), c3: SIMD4(t.x, t.y, t.z, 1))
+        Mat4(columns: (SIMD4(1, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(t.x, t.y, t.z, 1)))
     }
     static func scaling(_ s: SIMD3<Float>) -> Mat4 {
-        Mat4(c0: SIMD4(s.x, 0, 0, 0), c1: SIMD4(0, s.y, 0, 0), c2: SIMD4(0, 0, s.z, 0), c3: SIMD4(0, 0, 0, 1))
+        Mat4(columns: (SIMD4(s.x, 0, 0, 0), SIMD4(0, s.y, 0, 0), SIMD4(0, 0, s.z, 0), SIMD4(0, 0, 0, 1)))
     }
     static func rotationX(_ a: Float) -> Mat4 {
         let c = cos(a), s = sin(a)
-        return Mat4(c0: SIMD4(1, 0, 0, 0), c1: SIMD4(0, c, s, 0), c2: SIMD4(0, -s, c, 0), c3: SIMD4(0, 0, 0, 1))
+        return Mat4(columns: (SIMD4(1, 0, 0, 0), SIMD4(0, c, s, 0), SIMD4(0, -s, c, 0), SIMD4(0, 0, 0, 1)))
     }
     static func rotationY(_ a: Float) -> Mat4 {
         let c = cos(a), s = sin(a)
-        return Mat4(c0: SIMD4(c, 0, -s, 0), c1: SIMD4(0, 1, 0, 0), c2: SIMD4(s, 0, c, 0), c3: SIMD4(0, 0, 0, 1))
+        return Mat4(columns: (SIMD4(c, 0, -s, 0), SIMD4(0, 1, 0, 0), SIMD4(s, 0, c, 0), SIMD4(0, 0, 0, 1)))
     }
     static func rotationZ(_ a: Float) -> Mat4 {
         let c = cos(a), s = sin(a)
-        return Mat4(c0: SIMD4(c, s, 0, 0), c1: SIMD4(-s, c, 0, 0), c2: SIMD4(0, 0, 1, 0), c3: SIMD4(0, 0, 0, 1))
+        return Mat4(columns: (SIMD4(c, s, 0, 0), SIMD4(-s, c, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(0, 0, 0, 1)))
     }
 
     static func compose(position: SIMD3<Float>, rotation: Quat, scale: SIMD3<Float>) -> Mat4 {
@@ -91,58 +88,51 @@ public struct Mat4: Sendable, Equatable {
     }
 }
 
-/// Quaternion (x, y, z, w).
-public struct Quat: Sendable, Equatable {
-    var x: Float
-    var y: Float
-    var z: Float
-    var w: Float
+// MARK: - Quat (simd_quatf)
 
-    static let identity = Quat(x: 0, y: 0, z: 0, w: 1)
+extension Quat {
+    static let identity = Quat(ix: 0, iy: 0, iz: 0, r: 1)
 
-    /// (x, y, z, w) — maps to `simd_quatf(ix:iy:iz:r:)` / `.vector`.
-    public var components: SIMD4<Float> { SIMD4(x, y, z, w) }
+    /// (x, y, z, w) — the imaginary parts followed by the real part.
+    public var components: SIMD4<Float> { self.vector }
 
-    var xyz: SIMD3<Float> { SIMD3(x, y, z) }
-    var length: Float { (x * x + y * y + z * z + w * w).squareRoot() }
+    /// Build from an (x, y, z, w) vector. Inverse of `components`.
+    public init(components v: SIMD4<Float>) { self.init(vector: v) }
+
+    // `conjugate`, `normalized` and `length` are native on simd_quatf.
 
     static func axisAngle(_ angle: Float, _ axis: SIMD3<Float>) -> Quat {
         let a = normalize3(axis)
         let half = angle * 0.5
         let s = sin(half)
-        return Quat(x: a.x * s, y: a.y * s, z: a.z * s, w: cos(half))
+        return Quat(ix: a.x * s, iy: a.y * s, iz: a.z * s, r: cos(half))
     }
 
-    /// Hamilton product self·other.
+    /// Hamilton product self·other. Explicit to pin the (x,y,z,w) convention.
     func mul(_ o: Quat) -> Quat {
-        Quat(x: w * o.x + x * o.w + y * o.z - z * o.y,
-             y: w * o.y - x * o.z + y * o.w + z * o.x,
-             z: w * o.z + x * o.y - y * o.x + z * o.w,
-             w: w * o.w - x * o.x - y * o.y - z * o.z)
-    }
-
-    var conjugate: Quat { Quat(x: -x, y: -y, z: -z, w: w) }
-
-    var normalized: Quat {
-        let l = length
-        return l > 0 ? Quat(x: x / l, y: y / l, z: z / l, w: w / l) : self
+        let (x, y, z, w) = (vector.x, vector.y, vector.z, vector.w)
+        let (ox, oy, oz, ow) = (o.vector.x, o.vector.y, o.vector.z, o.vector.w)
+        return Quat(ix: w * ox + x * ow + y * oz - z * oy,
+                    iy: w * oy - x * oz + y * ow + z * ox,
+                    iz: w * oz + x * oy - y * ox + z * ow,
+                    r:  w * ow - x * ox - y * oy - z * oz)
     }
 
     /// Rotate a vector: v + 2w(u×v) + 2u×(u×v), where u = xyz.
     func rotate(_ v: SIMD3<Float>) -> SIMD3<Float> {
-        let u = xyz
+        let u = self.imag
         let t = 2 * cross3(u, v)
-        return v + w * t + cross3(u, t)
+        return v + self.real * t + cross3(u, t)
     }
 
     /// Rotation matrix for this (assumed unit) quaternion.
     var matrix: Mat4 {
-        let (x, y, z, w) = (self.x, self.y, self.z, self.w)
-        return Mat4(
-            c0: SIMD4(1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y), 0),
-            c1: SIMD4(2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x), 0),
-            c2: SIMD4(2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y), 0),
-            c3: SIMD4(0, 0, 0, 1)
-        )
+        let (x, y, z, w) = (vector.x, vector.y, vector.z, vector.w)
+        return Mat4(columns: (
+            SIMD4(1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y), 0),
+            SIMD4(2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x), 0),
+            SIMD4(2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y), 0),
+            SIMD4(0, 0, 0, 1)
+        ))
     }
 }

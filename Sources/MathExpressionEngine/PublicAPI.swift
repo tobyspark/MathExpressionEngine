@@ -139,8 +139,8 @@ public enum EngineValue: Sendable, Equatable {
         case .vec2(let v):  return v.x
         case .vec3(let v):  return v.x
         case .vec4(let v):  return v.x
-        case .transform(let m): return m.c0.x
-        case .quat(let q): return q.x
+        case .transform(let m): return m.columns.0.x
+        case .quat(let q): return q.vector.x
         case .array(let els): return els.first?.scalar ?? 0
         }
     }
@@ -154,11 +154,12 @@ public enum EngineValue: Sendable, Equatable {
         case .vec3(let v):  return [v.x, v.y, v.z]
         case .vec4(let v):  return [v.x, v.y, v.z, v.w]
         case .transform(let m):
-            return [m.c0.x, m.c0.y, m.c0.z, m.c0.w,
-                    m.c1.x, m.c1.y, m.c1.z, m.c1.w,
-                    m.c2.x, m.c2.y, m.c2.z, m.c2.w,
-                    m.c3.x, m.c3.y, m.c3.z, m.c3.w]
-        case .quat(let q): return [q.x, q.y, q.z, q.w]
+            let c = m.columns
+            return [c.0.x, c.0.y, c.0.z, c.0.w,
+                    c.1.x, c.1.y, c.1.z, c.1.w,
+                    c.2.x, c.2.y, c.2.z, c.2.w,
+                    c.3.x, c.3.y, c.3.z, c.3.w]
+        case .quat(let q): return [q.vector.x, q.vector.y, q.vector.z, q.vector.w]
         case .array(let els): return els.map(\.scalar)
         }
     }
