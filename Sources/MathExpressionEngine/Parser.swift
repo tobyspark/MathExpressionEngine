@@ -12,7 +12,14 @@ struct Parser {
     private var p = 0
     private(set) var diagnostics: [Diagnostic] = []
     private var depth = 0
-    private let maxDepth = 200
+    // Nesting-depth cap. Each level of nesting costs several stack frames here
+    // (additive → multiplicative → unary → power → postfix → primary) and again
+    // downstream in Sema / lowering / evaluation, so the cap must keep the whole
+    // pipeline's recursion within a small thread/task stack (debug frames are
+    // large, and the test runner uses a smaller stack than the main thread).
+    // Empirically ~64 levels can exhaust that stack; 32 stays well clear while
+    // remaining far beyond any hand-written expression's nesting.
+    private let maxDepth = 32
 
     init(_ tokens: [Token]) { self.tokens = tokens }
 
