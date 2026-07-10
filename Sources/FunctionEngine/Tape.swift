@@ -8,9 +8,10 @@
 //  no closures, and no strings in the instruction stream — so `Tape` is
 //  `Sendable` and the eval loop touches no ARC.
 //
-//  (Slice 2 keeps the register file and inputs as plain `[Float]`; a later slice
-//  moves them to `withUnsafeTemporaryAllocation` / `InlineArray` for the
-//  zero-per-frame-allocation goal in DESIGN-FunctionNode-Engine.md.)
+//  The eval loop uses `withUnsafeTemporaryAllocation` for the combined
+//  input + register scratch, so a typical scalar evaluation makes NO heap
+//  allocation (small scratch is stack-allocated). Moving to `InlineArray`
+//  and SIMD kernels is a later slice (DESIGN-FunctionNode-Engine.md §9).
 //
 
 import Foundation
@@ -130,43 +131,66 @@ func lower(_ ast: Expr) -> Tape {
 
 /// Execute a tape against a set of input values. Throws `.missingInput` if a
 /// required input is absent. The dispatch loop is a `switch` over POD
-/// instructions operating on a flat register file — no ARC, no closures.
+/// instructions operating on a stack-allocated scratch buffer — no heap
+/// allocation, no ARC, no closures in the loop.
+///
+/// The scratch holds the resolved inputs at `[0, inputCount)` and the register
+/// file at `[inputCount, inputCount + registerCount)`. Input resolution can fail
+/// (missing input), so it records the offending name and bails without throwing
+/// *inside* the allocation closure — keeping `withUnsafeTemporaryAllocation`
+/// non-throwing (it is `rethrows`, which would otherwise erase the typed error).
 func runTape(_ tape: Tape, _ inputs: [String: Float]) throws(EvalError) -> Float {
-    // Resolve inputs into a positional array once (index == loadInput.inputIndex).
-    var inputValues = [Float](repeating: 0, count: tape.inputOrder.count)
-    for (index, name) in tape.inputOrder.enumerated() {
-        guard let value = inputs[name] else { throw EvalError.missingInput(name) }
-        inputValues[index] = value
-    }
+    let inputCount = tape.inputOrder.count
+    let total = inputCount + tape.registerCount
 
-    var r = [Float](repeating: 0, count: tape.registerCount)
+    var missing: String? = nil
 
-    for ins in tape.instructions {
-        switch ins {
-        case .loadConst(let dst, let ci):
-            r[dst] = tape.constants[ci]
-        case .loadInput(let dst, let ii):
-            r[dst] = inputValues[ii]
-        case .negate(let dst, let src):
-            r[dst] = -r[src]
-        case .binary(let op, let dst, let lhs, let rhs):
-            let a = r[lhs], b = r[rhs]
-            switch op {
-            case .add: r[dst] = a + b
-            case .sub: r[dst] = a - b
-            case .mul: r[dst] = a * b
-            case .div: r[dst] = a / b
-            case .mod: r[dst] = a.truncatingRemainder(dividingBy: b)
-            case .pow: r[dst] = Float(pow(Double(a), Double(b)))
+    let result = withUnsafeTemporaryAllocation(of: Float.self, capacity: total) { scratch -> Float in
+        // Resolve inputs into the front of the scratch (index == loadInput.inputIndex).
+        var i = 0
+        while i < inputCount {
+            let name = tape.inputOrder[i]
+            if let value = inputs[name] {
+                scratch[i] = value
+            } else {
+                missing = name
+                return .nan   // bail without throwing; the throw happens after the closure
             }
-        case .call1(let id, let dst, let a):
-            r[dst] = Builtins.evaluate(id, r[a], 0, 0)
-        case .call2(let id, let dst, let a, let b):
-            r[dst] = Builtins.evaluate(id, r[a], r[b], 0)
-        case .call3(let id, let dst, let a, let b, let c):
-            r[dst] = Builtins.evaluate(id, r[a], r[b], r[c])
+            i += 1
         }
+
+        let base = inputCount   // registers live after the inputs
+
+        for ins in tape.instructions {
+            switch ins {
+            case .loadConst(let dst, let ci):
+                scratch[base + dst] = tape.constants[ci]
+            case .loadInput(let dst, let ii):
+                scratch[base + dst] = scratch[ii]
+            case .negate(let dst, let src):
+                scratch[base + dst] = -scratch[base + src]
+            case .binary(let op, let dst, let lhs, let rhs):
+                let a = scratch[base + lhs], b = scratch[base + rhs]
+                switch op {
+                case .add: scratch[base + dst] = a + b
+                case .sub: scratch[base + dst] = a - b
+                case .mul: scratch[base + dst] = a * b
+                case .div: scratch[base + dst] = a / b
+                case .mod: scratch[base + dst] = a.truncatingRemainder(dividingBy: b)
+                case .pow: scratch[base + dst] = Float(pow(Double(a), Double(b)))
+                }
+            case .call1(let id, let dst, let a):
+                scratch[base + dst] = Builtins.evaluate(id, scratch[base + a], 0, 0)
+            case .call2(let id, let dst, let a, let b):
+                scratch[base + dst] = Builtins.evaluate(id, scratch[base + a], scratch[base + b], 0)
+            case .call3(let id, let dst, let a, let b, let c):
+                scratch[base + dst] = Builtins.evaluate(id, scratch[base + a], scratch[base + b], scratch[base + c])
+            }
+        }
+
+        return scratch[base + tape.resultRegister]
     }
 
-    return r[tape.resultRegister]
+    if let missing { throw EvalError.missingInput(missing) }
+    return result
 }

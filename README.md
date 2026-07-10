@@ -18,9 +18,16 @@ swift test
 - Free identifiers become the interface's input ports (first-appearance order,
   deduplicated, constants excluded); the expression's value is the single output.
 - `CompileResult.evaluate([name: Float]) throws(EvalError) -> Float` — runs the
-  tape. The tree-walking `ReferenceInterpreter` remains as the **differential
-  oracle**: `DifferentialTests` fuzz random expressions and assert
-  `tape == reference` (bit-identical, NaN-aware).
+  tape over a **stack-allocated scratch** (`withUnsafeTemporaryAllocation`), so a
+  typical scalar eval makes no heap allocation. The tree-walking
+  `ReferenceInterpreter` remains as the **differential oracle**: `DifferentialTests`
+  fuzz random expressions and assert `tape == reference` (bit-identical, NaN-aware);
+  `StressTests` hammer the unsafe scratch path (~180k evals) against the oracle.
+
+> A *strict* per-eval allocation-count gate needs Instruments / a malloc-count
+> harness (macOS; see `DESIGN-FunctionNode-Engine.md` §11). The Linux CI proves
+> correctness under load; the zero-alloc property is structural (stack scratch,
+> no `[Float]` in the eval loop).
 - Builtins: trig, `sqrt/abs/exp/log/log2`, `floor/ceil/round/sign/fract`,
   `pow/min/max/mod/step`, `clamp/mix/smoothstep`, `radians/degrees/saturate`;
   constants `pi/tau/e`. `^` is exponent (right-associative); unary minus binds
