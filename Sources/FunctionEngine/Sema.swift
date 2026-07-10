@@ -20,8 +20,16 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
 
     var letTypes: [String: ValueType] = [:]
     var declaredLocals = Set<String>()
+    var referencedLocals = Set<String>()
     var outputs: [OutputPort] = []
     var outputNamesSeen = Set<String>()
+
+    let functionCandidates = Array(Builtins.arities.keys) + ["vec2", "vec3", "vec4"]
+    func unknownFunctionMessage(_ name: String) -> String {
+        var message = "Unknown function `\(name)`."
+        if let near = nearestName(name, functionCandidates) { message += " Did you mean `\(near)`?" }
+        return message
+    }
 
     func diag(_ code: DiagnosticCode, _ message: String, _ span: Span) {
         diagnostics.append(Diagnostic(code: code, severity: .error, message: message, span: span))
@@ -48,7 +56,7 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
         }
 
         guard let arity = Builtins.arities[name] else {
-            diag(.unknownName, "Unknown function `\(name)`.", span)
+            diag(.unknownName, unknownFunctionMessage(name), span)
             return nil
         }
         if argTypes.count != arity {
@@ -157,7 +165,7 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
 
         case .variable(let name, let span):
             if let t = scope[name] { return t }        // comprehension loop variable
-            if let t = letTypes[name] { return t }     // local
+            if let t = letTypes[name] { referencedLocals.insert(name); return t }   // local
             if letNames.contains(name) {
                 diag(.useBeforeDefinition, "`\(name)` is used before it is defined.", span)
                 return nil
@@ -173,6 +181,10 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
 
         case .binary(let op, let l, let r, let span):
             guard let lt = synthesize(l, scope), let rt = synthesize(r, scope) else { return nil }
+            if op == .div || op == .mod, case .number(let divisor, _) = r, divisor == 0 {
+                diagnostics.append(Diagnostic(code: .divisionByZero, severity: .warning,
+                    message: "Division by a literal `0` — the result is non-finite.", span: span))
+            }
             guard !lt.isArray, !rt.isArray else {
                 diag(.typeMismatch, "`\(opSymbol(op))` doesn't apply to arrays.", span); return nil
             }
@@ -272,6 +284,14 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
                 diag(.duplicateOutput, "Two outputs are both named `\(name)`.", span)
             }
             outputs.append(OutputPort(name: name, type: t ?? .float))
+        }
+    }
+
+    // Advisory: `let` bindings that are never referenced.
+    for stmt in body.statements {
+        if case .local(let name, _, let span) = stmt, !referencedLocals.contains(name) {
+            diagnostics.append(Diagnostic(code: .unusedBinding, severity: .warning,
+                message: "`\(name)` is never used.", span: span))
         }
     }
 

@@ -41,6 +41,9 @@ public enum DiagnosticCode: String, Sendable, Equatable {
     case heterogeneousArray    // array literal with mixed element types
     case notAnArray            // indexing / reducing a non-array
     case expectedRange         // comprehension range malformed
+    case divisionByZero        // literal `/ 0` (warning)
+    case unusedBinding         // a `let` never referenced (warning)
+    case expressionTooDeep     // nesting-depth guard
 }
 
 public struct Diagnostic: Sendable, Equatable {

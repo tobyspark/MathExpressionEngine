@@ -11,6 +11,8 @@ struct Parser {
     private let tokens: [Token]
     private var p = 0
     private(set) var diagnostics: [Diagnostic] = []
+    private var depth = 0
+    private let maxDepth = 200
 
     init(_ tokens: [Token]) { self.tokens = tokens }
 
@@ -128,6 +130,13 @@ struct Parser {
     }
 
     private mutating func parseAdditive() -> Expr? {
+        depth += 1
+        defer { depth -= 1 }
+        if depth > maxDepth {
+            diagnostics.append(Diagnostic(code: .expressionTooDeep, severity: .error,
+                                          message: "Expression is nested too deeply.", span: current.span))
+            return nil
+        }
         guard var left = parseMultiplicative() else { return nil }
         while true {
             let op: BinaryOp
