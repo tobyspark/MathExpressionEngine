@@ -448,6 +448,7 @@ private func describe(_ t: Token) -> String {
     case .equals:            return "="
     case .semicolon:         return ";"
     case .dot:               return "."
+    case .colon:             return ":"
     case .lbracket:          return "["
     case .rbracket:          return "]"
     case .dotDot:            return ".."
