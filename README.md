@@ -16,7 +16,10 @@ swift test
 - `compile(source) -> CompileResult` — lex → parse → infer interface → **lower to
   a flat POD bytecode tape** (register machine; `Instr`/`Tape` in `Tape.swift`).
 - Free identifiers become the interface's input ports (first-appearance order,
-  deduplicated, constants excluded); the expression's value is the single output.
+  deduplicated, constants and locals excluded). Bodies may use `let` locals and
+  `;`-separated statements; a bare expression is the implicit `result` output,
+  or declare multiple named outputs with `out name = …` (`evaluate` returns the
+  first, `evaluateAll` returns all in order).
 - `CompileResult.evaluate([name: Float]) throws(EvalError) -> Float` — runs the
   tape over a **stack-allocated scratch** (`withUnsafeTemporaryAllocation`), so a
   typical scalar eval makes no heap allocation. The tree-walking

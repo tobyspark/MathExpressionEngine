@@ -23,22 +23,108 @@ struct Parser {
         return t
     }
 
-    /// Parse a whole expression, requiring it to consume all input.
-    mutating func parse() -> Expr? {
+    /// Parse a whole function body: `;`-separated statements (`let`/`out`/bare
+    /// expression). A single bare expression normalizes to one implicit output.
+    mutating func parse() -> Body? {
         if case .eof = current.kind {
             diagnostics.append(Diagnostic(code: .emptyBody, severity: .error,
                                           message: "The function is empty — enter an expression.",
                                           span: current.span))
             return nil
         }
-        guard let expr = parseAdditive() else { return nil }
-        guard case .eof = current.kind else {
+
+        var items: [ParseItem] = []
+        while true {
+            guard let item = parseItem() else { return nil }
+            items.append(item)
+
+            if case .semicolon = current.kind {
+                advance()
+                if case .eof = current.kind { break }   // trailing `;` is fine
+                continue
+            }
+            if case .eof = current.kind { break }
+
             diagnostics.append(Diagnostic(code: .unexpectedToken, severity: .error,
-                                          message: "Unexpected `\(describe(current))` after the expression.",
+                                          message: "Expected `;` or end of input after the statement.",
                                           span: current.span))
             return nil
         }
-        return expr
+
+        return normalize(items)
+    }
+
+    private mutating func parseItem() -> ParseItem? {
+        if case .identifier(let keyword) = current.kind, keyword == "let" || keyword == "out" {
+            let isOutput = (keyword == "out")
+            let keywordSpan = current.span
+            advance()
+
+            guard case .identifier(let name) = current.kind else {
+                diagnostics.append(Diagnostic(code: .expectedName, severity: .error,
+                                              message: "Expected a name after `\(keyword)`.",
+                                              span: current.span))
+                return nil
+            }
+            advance()
+
+            guard case .equals = current.kind else {
+                diagnostics.append(Diagnostic(code: .expectedEquals, severity: .error,
+                                              message: "Expected `=` after `\(keyword) \(name)`.",
+                                              span: current.span))
+                return nil
+            }
+            advance()
+
+            guard let value = parseAdditive() else { return nil }
+            let span = merge(keywordSpan, value.span)
+            return isOutput ? .output(name, value, span) : .local(name, value, span)
+        }
+
+        guard let expr = parseAdditive() else { return nil }
+        return .expr(expr)
+    }
+
+    private mutating func normalize(_ items: [ParseItem]) -> Body? {
+        let bareExprs: [Expr] = items.compactMap { if case .expr(let e) = $0 { return e } else { return nil } }
+        let hasOutput = items.contains { if case .output = $0 { return true } else { return false } }
+
+        if hasOutput && !bareExprs.isEmpty {
+            diagnostics.append(Diagnostic(code: .mixedOutput, severity: .error,
+                                          message: "A trailing expression can't be combined with `out` declarations — wrap it as `out result = …` or remove it.",
+                                          span: bareExprs[0].span))
+            return nil
+        }
+        if !hasOutput && bareExprs.count > 1 {
+            diagnostics.append(Diagnostic(code: .mixedOutput, severity: .error,
+                                          message: "Multiple expressions without `out` names — give each an `out name = …`.",
+                                          span: bareExprs[1].span))
+            return nil
+        }
+        if !hasOutput && bareExprs.isEmpty {
+            let span = items.last.map { spanOf($0) } ?? Span(start: 0, length: 0)
+            diagnostics.append(Diagnostic(code: .noOutput, severity: .error,
+                                          message: "The function produces no output — add a trailing expression or an `out`.",
+                                          span: span))
+            return nil
+        }
+
+        var statements: [Statement] = []
+        for item in items {
+            switch item {
+            case .local(let n, let e, let s):  statements.append(.local(name: n, value: e, span: s))
+            case .output(let n, let e, let s): statements.append(.output(name: n, value: e, span: s))
+            case .expr(let e):                 statements.append(.output(name: "result", value: e, span: e.span))
+            }
+        }
+        return Body(statements: statements)
+    }
+
+    private func spanOf(_ item: ParseItem) -> Span {
+        switch item {
+        case .local(_, _, let s), .output(_, _, let s): return s
+        case .expr(let e): return e.span
+        }
     }
 
     private mutating func parseAdditive() -> Expr? {
@@ -153,6 +239,13 @@ struct Parser {
     }
 }
 
+/// A parsed statement before normalization into `Body`.
+private enum ParseItem {
+    case local(String, Expr, Span)
+    case output(String, Expr, Span)
+    case expr(Expr)
+}
+
 private func merge(_ a: Span, _ b: Span) -> Span {
     let start = min(a.start, b.start)
     let end = max(a.start + a.length, b.start + b.length)
@@ -172,6 +265,8 @@ private func describe(_ t: Token) -> String {
     case .lparen:            return "("
     case .rparen:            return ")"
     case .comma:             return ","
+    case .equals:            return "="
+    case .semicolon:         return ";"
     case .eof:               return "end of input"
     }
 }

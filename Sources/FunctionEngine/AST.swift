@@ -29,3 +29,15 @@ indirect enum Expr: Sendable {
         }
     }
 }
+
+/// A statement in the function body. A bare single expression is normalized to
+/// one implicit `.output("result", …)`.
+enum Statement: Sendable {
+    case local(name: String, value: Expr, span: Span)    // `let name = expr`
+    case output(name: String, value: Expr, span: Span)   // `out name = expr` (or implicit result)
+}
+
+/// The whole function body: statements in source order.
+struct Body: Sendable {
+    let statements: [Statement]
+}

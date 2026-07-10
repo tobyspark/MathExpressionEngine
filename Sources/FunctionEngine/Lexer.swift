@@ -12,6 +12,7 @@ struct Token: Equatable {
         case identifier(String)
         case plus, minus, star, slash, percent, caret
         case lparen, rparen, comma
+        case equals, semicolon
         case eof
     }
     let kind: Kind
@@ -91,6 +92,8 @@ struct Lexer {
             case "(": kind = .lparen
             case ")": kind = .rparen
             case ",": kind = .comma
+            case "=": kind = .equals
+            case ";": kind = .semicolon
             default:  kind = nil
             }
             if let kind {

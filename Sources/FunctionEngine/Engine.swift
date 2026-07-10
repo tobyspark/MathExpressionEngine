@@ -2,47 +2,52 @@
 //  Engine.swift
 //  FunctionEngine
 //
-//  The scalar Tier-0 pipeline. `compile(_:)` lowers to the flat POD tape (the
-//  fast path); `compileReferenceInterpreter(_:)` wraps the tree-walking
-//  interpreter and is used as the differential oracle in tests
-//  (assert tape == reference). Both share the same front end, so they always
-//  agree on the interface and diagnostics.
+//  The scalar pipeline. `compile(_:)` lowers to the flat POD tape (fast path);
+//  `compileReferenceInterpreter(_:)` wraps the tree-walking interpreter and is
+//  used as the differential oracle in tests. Both share the same front end, so
+//  they always agree on the interface and diagnostics.
 //
 
 /// Front end shared by both back ends: lex → parse → infer interface.
-private func frontEnd(_ source: String) -> (ast: Expr?, interface: Interface, diagnostics: [Diagnostic]) {
+private func frontEnd(_ source: String) -> (body: Body?, interface: Interface, diagnostics: [Diagnostic]) {
     var lexer = Lexer(source)
     let (tokens, lexDiagnostics) = lexer.tokenize()
 
     var parser = Parser(tokens)
-    let ast = parser.parse()
+    let body = parser.parse()
 
     var diagnostics = lexDiagnostics + parser.diagnostics
-    var interface = Interface(inputs: [], outputType: .float)
+    var interface = Interface(inputs: [], outputs: [])
 
-    if let ast {
-        let (derived, semaDiagnostics) = analyze(ast)
+    if let body {
+        let (derived, semaDiagnostics) = analyze(body)
         interface = derived
         diagnostics += semaDiagnostics
     }
 
-    return (ast, interface, diagnostics)
+    return (body, interface, diagnostics)
 }
 
-/// Compile a Function Node source expression to a tape-backed program.
+/// Compile a Function Node source to a tape-backed program.
 ///
-/// Free identifiers become the interface's input ports; the value of the
-/// expression is its single output. When any diagnostic is error-severity no
-/// program is produced (`isValid == false`).
+/// Free identifiers become the interface's input ports; `out` declarations (or a
+/// single implicit `result` for a bare expression) become the outputs. When any
+/// diagnostic is error-severity, no program is produced (`isValid == false`).
 public func compile(_ source: String) -> CompileResult {
-    let (ast, interface, diagnostics) = frontEnd(source)
+    let (body, interface, diagnostics) = frontEnd(source)
 
     var program: Program? = nil
-    if let ast, !diagnostics.contains(where: { $0.severity == .error }) {
-        let tape = lower(ast)
-        program = Program(run: { @Sendable (inputs: [String: Float]) throws(EvalError) -> Float in
-            try runTape(tape, inputs)
-        })
+    if let body, !diagnostics.contains(where: { $0.severity == .error }) {
+        let tape = lower(body)
+        program = Program(
+            outputCount: tape.outputRegisters.count,
+            runFirst: { @Sendable (inputs: [String: Float]) throws(EvalError) -> Float in
+                try runTapeFirst(tape, inputs)
+            },
+            runAll: { @Sendable (inputs: [String: Float]) throws(EvalError) -> [Float] in
+                try runTapeAll(tape, inputs)
+            }
+        )
     }
 
     return CompileResult(interface: interface, diagnostics: diagnostics, program: program)
@@ -51,13 +56,20 @@ public func compile(_ source: String) -> CompileResult {
 /// Compile to a program backed by the tree-walking reference interpreter.
 /// Internal: the differential oracle for the tape (see DifferentialTests).
 func compileReferenceInterpreter(_ source: String) -> CompileResult {
-    let (ast, interface, diagnostics) = frontEnd(source)
+    let (body, interface, diagnostics) = frontEnd(source)
 
     var program: Program? = nil
-    if let ast, !diagnostics.contains(where: { $0.severity == .error }) {
-        program = Program(run: { @Sendable (inputs: [String: Float]) throws(EvalError) -> Float in
-            try ReferenceInterpreter.eval(ast, inputs)
-        })
+    if let body, !diagnostics.contains(where: { $0.severity == .error }) {
+        program = Program(
+            outputCount: interface.outputs.count,
+            runFirst: { @Sendable (inputs: [String: Float]) throws(EvalError) -> Float in
+                let all = try ReferenceInterpreter.evalBody(body, inputs)
+                return all.first ?? .nan
+            },
+            runAll: { @Sendable (inputs: [String: Float]) throws(EvalError) -> [Float] in
+                try ReferenceInterpreter.evalBody(body, inputs)
+            }
+        )
     }
 
     return CompileResult(interface: interface, diagnostics: diagnostics, program: program)
