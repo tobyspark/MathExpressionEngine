@@ -3,10 +3,6 @@ import Testing
 
 @Suite struct DiagnosticsTests {
 
-    private func codes(_ src: String) -> [DiagnosticCode] {
-        compile(src).diagnostics.map(\.code)
-    }
-
     @Test func unknownFunctionReported() {
         let r = compile("foo(1)")
         #expect(!r.isValid)
