@@ -27,7 +27,7 @@ private func frontEnd(_ source: String) -> (body: Body?, interface: Interface, d
     return (body, interface, diagnostics)
 }
 
-/// Compile a Function Node source to a tape-backed program.
+/// Compile a Math Expression node source to a tape-backed program.
 public func compile(_ source: String) -> CompileResult {
     let (body, interface, diagnostics) = frontEnd(source)
 

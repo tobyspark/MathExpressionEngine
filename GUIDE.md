@@ -1,7 +1,7 @@
 # Expression Language Guide
 
-A friendly, example-first tour of the expression language you write in the Math /
-Function node. No programming background assumed.
+A friendly, example-first tour of the expression language you write in the Math
+Expression node. No programming background assumed.
 
 The idea in one sentence: **you write an expression, and the node figures out the
 rest** — the values you refer to become input ports, the results you name become
@@ -522,7 +522,8 @@ absurdly deep.
 The language is deliberately small. Things that are **not** in it (yet):
 
 - **Undeclared inputs are numbers.** A bare name is always a `float` — to take in
-  a vector, transform, or array, declare it with `in name: Type` (see
+  a vector, transform, or array, declare it with `in name: Type`, or type it
+  inline at a single use as `name: Type` (see
   [Inputs](#inputs-outputs-and-locals)).
 - **No `if` / conditionals, comparisons, or booleans.** Reach for `step`,
   `clamp`, `mix`, and `smoothstep` to get branch-like behaviour smoothly.

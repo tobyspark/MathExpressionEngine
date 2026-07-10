@@ -1,6 +1,6 @@
 # MathExpressionEngine
 
-A standalone typed-expression engine for Fabric's Math / Function node. It has no
+A standalone typed-expression engine for Fabric's Math Expression node. It has no
 package dependencies and doesn't touch Fabric, Metal, or Satin, so the correctness
 suite runs without a GPU or the app — just a Swift toolchain. Its transform /
 quaternion types are Apple `simd` (a zero-copy port boundary), so it targets Apple
@@ -32,5 +32,5 @@ Sources/MathExpressionEngine/
   Tape.swift                 // register-machine bytecode (production)
   Engine.swift               // compile(_:)
 Tests/MathExpressionEngineTests/
-  Evaluation · Interface · Diagnostics · Property · Differential · Stress · Block · Vector · Array · Transform · Input · Hardening
+  Evaluation · Interface · Diagnostics · Property · Differential · Stress · Block · Vector · Array · Transform · Input · InlineTypedInput · Hardening · HostBoundary
 ```

@@ -79,7 +79,7 @@ Design commitments:
 
 ### Verification
 
-Twelve test suites: unit tests, interface-as-data checks, per-builtin evaluation
+Fourteen test suites: unit tests, interface-as-data checks, per-builtin evaluation
 tables, **differential fuzzing** (bytecode tape versus the reference interpreter
 on randomized well-typed expressions), **metamorphic property tests** (matrix and
 quaternion identities), stress tests, and guardrail tests. Run with `swift test`
@@ -112,18 +112,21 @@ convenience for the all-scalar case.
 
 Roughly in priority order:
 
-1. **More transform math:** general 4×4 `inverse`, spherical-linear interpolation
-   (`slerp`), `lookAt`, and Euler-angle quaternion construction.
+1. **More transform math:** expose `inverse`, `slerp`, `lookAt`, and Euler-angle
+   quaternion construction in the language. Now that transforms/quaternions are
+   Apple `simd`, most are one call away (`simd_inverse`, `simd_slerp`) and only
+   need language surface.
 2. **Reduced-allocation evaluation:** a stack-allocated register scratch plus an
    out-of-line array store for scalar/vector programs, leaving array-producing
    programs (which must allocate their output anyway) unchanged.
 3. **Type-specialized bytecode** (one instruction variant per resolved type) and,
    optionally, batched SIMD evaluation of comprehension bodies.
-4. **Fabric node integration:** an adapter between `EngineValue` and the node
-   port types, dynamic typed ports derived from the compiled interface, document
-   serialization, a source editor that renders diagnostics at their `line:column`,
-   and migration of existing math-expression nodes. This layer is part of the app,
-   not this package.
+4. **Fabric node integration (done, in the app):** an adapter maps `EngineValue`
+   ↔ node port values, dynamic typed ports are derived from the compiled
+   interface, the expression is serialized, and the Math Expression node is
+   migrated onto the engine (the array math-expression nodes were removed).
+   Remaining polish: render diagnostics inline at their `line:column` in a source
+   editor — the node currently lists them.
 5. **Additional polish:** parser error recovery that reports every error in one
    pass, machine-applyable fix hints on diagnostics, and support for stateful
    (feedback) bindings that persist across evaluations.

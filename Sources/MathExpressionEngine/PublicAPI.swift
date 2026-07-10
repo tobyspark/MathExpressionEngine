@@ -2,7 +2,7 @@
 //  PublicAPI.swift
 //  MathExpressionEngine
 //
-//  The public surface consumed by the Fabric Function Node.
+//  The public surface consumed by the Fabric Math Expression node.
 //
 
 /// A source range: a start offset (in characters) and a length.
