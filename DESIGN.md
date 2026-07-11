@@ -4,44 +4,16 @@ Goal, present reality, and future steps for the engine.
 
 ---
 
-## What it is
-
-A small compiler for a statically-typed expression DSL whose primitives are native
-SIMD functions — it compiles and type-checks the source rather than interpreting it.
-
-- **Front-end (a real compiler):** `lex → parse → type-infer → lower`. Free
-  identifiers become typed input ports, `out name = …` become typed outputs, and
-  every type is inferred, with real diagnostics (arity, type mismatch, bad swizzle,
-  "did you mean…"). The expression *is* the schema — the ports fall out of the compile.
-- **Back-end (a tiny VM):** it lowers to a flat register-machine bytecode tape,
-  compiled once as a pure function off the render thread and executed cheaply per
-  frame. A tree-walking interpreter exists only as a differential test oracle.
-- **Native primitives:** leaves and builtins are native Swift / Apple `simd`
-  (`Float`, `simd_float3`, `simd_float4x4`, `simd_quatf`, arrays; trig, vector
-  algebra, transform/quat ops) dispatched by opcode, mapping onto Fabric's port
-  types as a zero-copy reinterpret.
-
----
-
 ## Goal
 
-A typed expression engine where **the expression is the single source of truth**:
-free identifiers become typed input ports, `out name = …` declarations become
-typed output ports, and every type is inferred. One expression then covers
-anything from `sin(x) + y^2` to a procedural array of transforms.
+A typed expression engine where **the expression is the single source of truth**: free identifiers become typed input ports, `out name = …` declarations become typed output ports, and every type is inferred. One expression then covers anything from `sin(x) + y^2` to a procedural array of transforms.
 
 Design commitments:
-- **Native Swift + SIMD**, no C or C++. Its value types *are* Fabric's port
-  values (`Float`, `simd_float3`, `simd_float4x4`, `simd_quatf`, …), so the node
-  boundary is a zero-copy reinterpret. Transforms/quaternions use Apple `simd`,
-  so the engine targets Apple platforms.
-- **Standalone** — no package dependencies and no Fabric, Metal, or Satin — so
-  the correctness suite runs on a plain Swift toolchain, independent of any app.
-- **Compile once, evaluate many:** compilation is a pure function safe to run off
-  a render thread; evaluation is cheap enough to run per frame.
-- A representative target: `[ translate(vec3(i, 0, 0)) for i in 0..<n ]` produces a
-  `transform[]` output that can drive an instanced mesh, with the whole expression
-  as its single source of truth.
+
+- **Native Swift + SIMD**, no C or C++. Its value types _are_ Fabric's port values (`Float`, `simd_float3`, `simd_float4x4`, `simd_quatf`, …), so the node boundary is a zero-copy reinterpret. Transforms/quaternions use Apple `simd`, so the engine targets Apple platforms.
+- **Standalone** — no package dependencies and no Fabric, Metal, or Satin — so the correctness suite runs on a plain Swift toolchain, independent of any app.
+- **Compile once, evaluate many:** compilation is a pure function safe to run off a render thread; evaluation is cheap enough to run per frame.
+- A representative target: `[ translate(vec3(i, 0, 0)) for i in 0..<n ]` produces a `transform[]` output that can drive an instanced mesh, with the whole expression as its single source of truth.
 
 ---
 
@@ -49,62 +21,26 @@ Design commitments:
 
 ### Language
 
-- **Scalars** and **`vec2/3/4`**: constructors, `.xyz`/`.rgba` swizzles, elementwise
-  arithmetic with scalar↔vector broadcast, and type-directed operators.
-- **`transform`** (4×4) and **`quat`**: `translate` / `scale` / `rotateX,Y,Z` /
-  `compose`, `transformPoint` / `transformDir` / `transpose` / `inverse`, a
-  right-handed `lookAt` view matrix, `quatAxisAngle` / `quatEuler` (XYZ Euler
-  angles) / `conjugate` / `normalize` / `slerp`, and type-directed `*`
-  (matrix·matrix, matrix·vec4, quaternion compose, quaternion·vec3).
-  `transform * vec3` is deliberately undefined — use `transformPoint` /
-  `transformDir`.
-- **Arrays**: literals `[a, b, c]`; comprehensions over a numeric range
-  `[body for i in lo..<hi]` (and the inclusive `..`) or over an array
-  `[body for p in arr]` (the loop variable takes the element type) — with an
-  optional `(index, element)` pattern `[body for (i, p) in arr]` binding both;
-  indexing
-  `a[i]`; and reductions `sum` / `product` / `mean` / `count`, plus `min` / `max`
-  over an array (componentwise for vectors).
-- **Inputs**: free identifiers are `float` input ports; a typed input is declared
-  either with an `in name: Type` statement or inline at a single use site as
-  `name: Type` (`vec3`, `transform`, `quat`, `vec3[]`, …). Inference never widens
-  an input beyond `float`, so a declaration is the single escape hatch — and the
-  all-scalar default keeps working with no annotation at all. An inline-typed name
-  must be used exactly once; multiple uses require the `in` form.
-- **Statements**: `in` typed-input declarations, `let` locals, and multiple named
-  `out` outputs; a bare expression is the implicit `result` output.
-- **Builtins**: trig, exp/log, rounding, and multi-argument math (`min` / `max` /
-  `clamp` / `mix` / `smoothstep` / `step` / `pow` / `mod` / `wrap` / `atan2`) — all
-  componentwise over vectors with scalar↔vector broadcast; vector algebra
-  `length` / `dot` / `cross` / `normalize` / `distance`; constants `pi` / `tau` /
-  `e`. `^` is exponentiation (right-associative); unary minus binds looser than
-  `^`, so `-2^2 == -4`.
-- **Diagnostics** carry source spans: type errors, wrong arity, invalid swizzles,
-  unknown names (with a "did you mean …?" suggestion), and array/output rules.
-  Advisory warnings cover literal division by zero and unused `let` bindings, and
-  never block evaluation.
-- **Guardrails**: a comprehension element-count cap, index-out-of-bounds checks,
-  and a parser nesting limit. All surface as diagnostics or thrown `EvalError`s —
-  never a hang or crash.
+- **Scalars** and **`vec2/3/4`**: constructors, `.xyz`/`.rgba` swizzles, elementwise arithmetic with scalar↔vector broadcast, and type-directed operators.
+- **`transform`** (4×4) and **`quat`**: `translate` / `scale` / `rotateX,Y,Z` / `compose`, `transformPoint` / `transformDir` / `transpose` / `inverse`, a right-handed `lookAt` view matrix, `quatAxisAngle` / `quatEuler` (XYZ Euler angles) / `conjugate` / `normalize` / `slerp`, and type-directed `*` (matrix·matrix, matrix·vec4, quaternion compose, quaternion·vec3). `transform * vec3` is deliberately undefined — use `transformPoint` / `transformDir`.
+- **Arrays**: literals `[a, b, c]`; comprehensions over a numeric range `[body for i in lo..<hi]` (and the inclusive `..`) or over an array `[body for p in arr]` (the loop variable takes the element type) — with an optional `(index, element)` pattern `[body for (i, p) in arr]` binding both; indexing `a[i]`; and reductions `sum` / `product` / `mean` / `count`, plus `min` / `max` over an array (componentwise for vectors).
+- **Inputs**: free identifiers are `float` input ports; a typed input is declared either with an `in name: Type` statement or inline at a single use site as `name: Type` (`vec3`, `transform`, `quat`, `vec3[]`, …). Inference never widens an input beyond `float`, so a declaration is the single escape hatch — and the all-scalar default keeps working with no annotation at all. An inline-typed name must be used exactly once; multiple uses require the `in` form.
+- **Statements**: `in` typed-input declarations, `let` locals, and multiple named `out` outputs; a bare expression is the implicit `result` output.
+- **Builtins**: trig, exp/log, rounding, and multi-argument math (`min` / `max` / `clamp` / `mix` / `smoothstep` / `step` / `pow` / `mod` / `wrap` / `atan2`) — all componentwise over vectors with scalar↔vector broadcast; vector algebra `length` / `dot` / `cross` / `normalize` / `distance`; constants `pi` / `tau` / `e`. `^` is exponentiation (right-associative); unary minus binds looser than `^`, so `-2^2 == -4`.
+- **Diagnostics** carry source spans: type errors, wrong arity, invalid swizzles, unknown names (with a "did you mean …?" suggestion), and array/output rules. Advisory warnings cover literal division by zero and unused `let` bindings, and never block evaluation.
+- **Guardrails**: a comprehension element-count cap, index-out-of-bounds checks, and a parser nesting limit. All surface as diagnostics or thrown `EvalError`s — never a hang or crash.
 
 ### Architecture
 
 - Pipeline: **lex → parse → infer (type synthesis) → lower**.
 - Two evaluators over one `EngineValue` type:
   - a flat **register-machine bytecode tape** (the production evaluator), and
-  - a **tree-walking interpreter** used as a differential oracle in tests.
-  Comprehensions execute as nested sub-tapes.
-- The register file is a heap `[EngineValue]` (one allocation per evaluation). A
-  reduced-allocation path for scalar/vector programs is possible later without
-  changing behaviour (see Future).
+  - a **tree-walking interpreter** used as a differential oracle in tests. Comprehensions execute as nested sub-tapes.
+- The register file is a heap `[EngineValue]` (one allocation per evaluation). A reduced-allocation path for scalar/vector programs is possible later without changing behaviour (see Future).
 
 ### Verification
 
-Fourteen test suites: unit tests, interface-as-data checks, per-builtin evaluation
-tables, **differential fuzzing** (bytecode tape versus the reference interpreter
-on randomized well-typed expressions), **metamorphic property tests** (matrix and
-quaternion identities), stress tests, and guardrail tests. Run with `swift test`
-on any Swift 6.1+ toolchain (Apple platforms).
+Fourteen test suites: unit tests, interface-as-data checks, per-builtin evaluation tables, **differential fuzzing** (bytecode tape versus the reference interpreter on randomized well-typed expressions), **metamorphic property tests** (matrix and quaternion identities), stress tests, and guardrail tests. Run with `swift test` on any Swift 6.1+ toolchain (Apple platforms).
 
 ### Public API
 
@@ -123,9 +59,7 @@ func compile(_ source: String) -> CompileResult
 // ValueType:   float | vec2/3/4 | transform | quat | array(element)
 ```
 
-Both input and output ports carry inferred/declared types. Supply inputs as typed
-`EngineValue`s via `evaluateValues(with:)`; the `[String: Float]` overloads are a
-convenience for the all-scalar case.
+Both input and output ports carry inferred/declared types. Supply inputs as typed `EngineValue`s via `evaluateValues(with:)`; the `[String: Float]` overloads are a convenience for the all-scalar case.
 
 ---
 
@@ -133,11 +67,6 @@ convenience for the all-scalar case.
 
 Roughly in priority order:
 
-1. **Reduced-allocation evaluation:** a stack-allocated register scratch plus an
-   out-of-line array store for scalar/vector programs, leaving array-producing
-   programs (which must allocate their output anyway) unchanged.
-2. **Type-specialized bytecode** (one instruction variant per resolved type) and,
-   optionally, batched SIMD evaluation of comprehension bodies.
-3. **Additional polish:** parser error recovery that reports every error in one
-   pass, machine-applyable fix hints on diagnostics, and support for stateful
-   (feedback) bindings that persist across evaluations.
+1. **Reduced-allocation evaluation:** a stack-allocated register scratch plus an out-of-line array store for scalar/vector programs, leaving array-producing programs (which must allocate their output anyway) unchanged.
+2. **Type-specialized bytecode** (one instruction variant per resolved type) and, optionally, batched SIMD evaluation of comprehension bodies.
+3. **Additional polish:** parser error recovery that reports every error in one pass, machine-applyable fix hints on diagnostics, and support for stateful (feedback) bindings that persist across evaluations.
