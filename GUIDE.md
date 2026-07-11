@@ -308,12 +308,37 @@ transformDir(xform, d)      // rotates/scales a direction (translation ignored)
 > (is it a point or a direction?). Use `transformPoint` or `transformDir` so the
 > intent is explicit.
 
+**Undo** a transform with `inverse` — `inverse(t) * t` is the identity, so it
+takes a transformed point back where it came from:
+
+```
+let t = translate(vec3(x, 0, 0)) * rotateY(spin);
+out worldToLocal = inverse(t)
+```
+
+**Aim** a transform with `lookAt(eye, center, up)`. It builds a right-handed
+**view** matrix — world → camera, looking from `eye` toward `center` with -Z
+forward. To instead *place* an object at `eye` so it faces `center`, invert it:
+
+```
+out place = inverse(lookAt(eye, target, vec3(0, 1, 0)))   // object faces `target`
+```
+
 **Rotations** can also be expressed as quaternions (`quat`), which are nicer to
 interpolate and compose:
 
 ```
 let q = quatAxisAngle(angle, vec3(0, 1, 0));   // rotate `angle` about the Y axis
 out spun = rotate(q, p)                          // apply q to a vec3
+```
+
+Build one from three **Euler angles** with `quatEuler(vec3(x, y, z))` (radians,
+applied X then Y then Z), and blend two rotations along the shortest arc with
+`slerp`:
+
+```
+in a: quat; in b: quat; in t: float;
+out tween = slerp(a, b, t)                       // a at t=0, b at t=1
 ```
 
 The `*` operator is overloaded by type, so it always "does the sensible thing":
@@ -465,11 +490,15 @@ usage.
 | `rotateX/Y/Z(float)` | `transform` |
 | `compose(position, rotation, scale)` | `transform` from a vec3, quat, vec3 |
 | `transpose(transform)` | `transform` |
+| `inverse(transform)` | `transform` (undoes the transform) |
+| `lookAt(eye, center, up)` | `transform` — a view matrix from three vec3 |
 | `transformPoint(transform, vec3)` | `vec3` |
 | `transformDir(transform, vec3)` | `vec3` |
 | `quatAxisAngle(angle, axis)` | `quat` from a float and a vec3 |
+| `quatEuler(vec3)` | `quat` from XYZ Euler angles (radians) |
 | `conjugate(quat)` | `quat` (inverse rotation) |
 | `rotate(quat, vec3)` | `vec3` |
+| `slerp(a, b, t)` | `quat` — shortest-path blend between two rotations |
 | `mul(a, b)` | same as the `*` operator |
 
 **Arrays** — `sum`, `product`, `mean`, `count`, and `min` / `max` over an array

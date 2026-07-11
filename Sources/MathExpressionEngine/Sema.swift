@@ -125,11 +125,21 @@ func analyze(_ body: Body) -> (interface: Interface, diagnostics: [Diagnostic]) 
                                "`\(name)` expects (transform, vec3).") ? .vec3 : nil
             case "transpose":
                 return require(argTypes[0] == .transform, "`transpose` expects a transform.") ? .transform : nil
+            case "inverse":
+                return require(argTypes[0] == .transform, "`inverse` expects a transform.") ? .transform : nil
+            case "lookAt":
+                return require(argTypes[0] == .vec3 && argTypes[1] == .vec3 && argTypes[2] == .vec3,
+                               "`lookAt` expects (vec3 eye, vec3 center, vec3 up).") ? .transform : nil
             case "quatAxisAngle":
                 return require(argTypes[0] == .float && argTypes[1] == .vec3,
                                "`quatAxisAngle` expects (float angle, vec3 axis).") ? .quat : nil
+            case "quatEuler":
+                return require(argTypes[0] == .vec3, "`quatEuler` expects a vec3 of XYZ angles (radians).") ? .quat : nil
             case "conjugate":
                 return require(argTypes[0] == .quat, "`conjugate` expects a quat.") ? .quat : nil
+            case "slerp":
+                return require(argTypes[0] == .quat && argTypes[1] == .quat && argTypes[2] == .float,
+                               "`slerp` expects (quat a, quat b, float t).") ? .quat : nil
             case "mul":
                 switch (argTypes[0], argTypes[1]) {
                 case (.transform, .transform): return .transform

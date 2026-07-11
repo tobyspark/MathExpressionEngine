@@ -21,8 +21,8 @@ enum FnID: Sendable {
     case length, distance, dot, cross, normalize
     case sum, product, mean, count
     case identity, translate, scale, rotateX, rotateY, rotateZ, compose
-    case transformPoint, transformDir, transpose
-    case quatAxisAngle, conjugate, mul, rotate
+    case transformPoint, transformDir, transpose, inverse, lookAt
+    case quatAxisAngle, quatEuler, conjugate, mul, rotate, slerp
 }
 
 enum Builtins {
@@ -46,7 +46,8 @@ enum Builtins {
         "identity": 0, "translate": 1, "scale": 1,
         "rotateX": 1, "rotateY": 1, "rotateZ": 1, "compose": 3,
         "transformPoint": 2, "transformDir": 2, "transpose": 1,
-        "quatAxisAngle": 2, "conjugate": 1, "mul": 2, "rotate": 2,
+        "inverse": 1, "lookAt": 3,
+        "quatAxisAngle": 2, "quatEuler": 1, "conjugate": 1, "mul": 2, "rotate": 2, "slerp": 3,
     ]
 
     /// Array reduction functions.
@@ -55,8 +56,8 @@ enum Builtins {
     /// Transform / quaternion functions (handled by dedicated type rules).
     static let transformFns: Set<String> = [
         "identity", "translate", "scale", "rotateX", "rotateY", "rotateZ", "compose",
-        "transformPoint", "transformDir", "transpose", "quatAxisAngle", "conjugate",
-        "mul", "rotate",
+        "transformPoint", "transformDir", "transpose", "inverse", "lookAt",
+        "quatAxisAngle", "quatEuler", "conjugate", "mul", "rotate", "slerp",
     ]
 
     /// Componentwise unary math functions (`genN → genN`).
@@ -126,10 +127,14 @@ enum Builtins {
         case "transformPoint": return .transformPoint
         case "transformDir": return .transformDir
         case "transpose": return .transpose
+        case "inverse": return .inverse
+        case "lookAt": return .lookAt
         case "quatAxisAngle": return .quatAxisAngle
+        case "quatEuler": return .quatEuler
         case "conjugate": return .conjugate
         case "mul": return .mul
         case "rotate": return .rotate
+        case "slerp": return .slerp
         default: return nil
         }
     }
@@ -174,8 +179,8 @@ enum Builtins {
         case .length, .distance, .dot, .cross, .normalize,
              .sum, .product, .mean, .count,
              .identity, .translate, .scale, .rotateX, .rotateY, .rotateZ, .compose,
-             .transformPoint, .transformDir, .transpose,
-             .quatAxisAngle, .conjugate, .mul, .rotate:
+             .transformPoint, .transformDir, .transpose, .inverse, .lookAt,
+             .quatAxisAngle, .quatEuler, .conjugate, .mul, .rotate, .slerp:
             return .nan
         }
     }
@@ -212,10 +217,14 @@ enum Builtins {
         case .transformPoint: return .vec3(a0.asMat4.transformPoint(a1.asVec3))
         case .transformDir:   return .vec3(a0.asMat4.transformDir(a1.asVec3))
         case .transpose:      return .transform(a0.asMat4.transposed)
+        case .inverse:        return .transform(a0.asMat4.inverse)
+        case .lookAt:         return .transform(Mat4.lookAt(eye: a0.asVec3, center: a1.asVec3, up: a2.asVec3))
         case .quatAxisAngle:  return .quat(Quat.axisAngle(a0.scalar, a1.asVec3))
+        case .quatEuler:      return .quat(Quat.euler(a0.asVec3))
         case .conjugate:      return .quat(a0.asQuat.conjugate)
         case .mul:            return EngineValue.binary(.mul, a0, a1)
         case .rotate:         return EngineValue.binary(.mul, a0, a1)   // quat · vec3
+        case .slerp:          return .quat(Quat.slerp(a0.asQuat, a1.asQuat, a2.scalar))
         case .count:
             return .float(Float(a0.arrayElements?.count ?? 0))
         case .sum, .product, .mean:

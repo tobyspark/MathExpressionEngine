@@ -52,10 +52,12 @@ Design commitments:
 - **Scalars** and **`vec2/3/4`**: constructors, `.xyz`/`.rgba` swizzles, elementwise
   arithmetic with scalar↔vector broadcast, and type-directed operators.
 - **`transform`** (4×4) and **`quat`**: `translate` / `scale` / `rotateX,Y,Z` /
-  `compose`, `transformPoint` / `transformDir` / `transpose`, `quatAxisAngle` /
-  `conjugate` / `normalize`, and type-directed `*` (matrix·matrix, matrix·vec4,
-  quaternion compose, quaternion·vec3). `transform * vec3` is deliberately
-  undefined — use `transformPoint` / `transformDir`.
+  `compose`, `transformPoint` / `transformDir` / `transpose` / `inverse`, a
+  right-handed `lookAt` view matrix, `quatAxisAngle` / `quatEuler` (XYZ Euler
+  angles) / `conjugate` / `normalize` / `slerp`, and type-directed `*`
+  (matrix·matrix, matrix·vec4, quaternion compose, quaternion·vec3).
+  `transform * vec3` is deliberately undefined — use `transformPoint` /
+  `transformDir`.
 - **Arrays**: literals `[a, b, c]`; comprehensions over a numeric range
   `[body for i in lo..<hi]` (and the inclusive `..`) or over an array
   `[body for p in arr]` (the loop variable takes the element type) — with an
@@ -131,21 +133,11 @@ convenience for the all-scalar case.
 
 Roughly in priority order:
 
-1. **More transform math:** expose `inverse`, `slerp`, `lookAt`, and Euler-angle
-   quaternion construction in the language. Now that transforms/quaternions are
-   Apple `simd`, most are one call away (`simd_inverse`, `simd_slerp`) and only
-   need language surface.
-2. **Reduced-allocation evaluation:** a stack-allocated register scratch plus an
+1. **Reduced-allocation evaluation:** a stack-allocated register scratch plus an
    out-of-line array store for scalar/vector programs, leaving array-producing
    programs (which must allocate their output anyway) unchanged.
-3. **Type-specialized bytecode** (one instruction variant per resolved type) and,
+2. **Type-specialized bytecode** (one instruction variant per resolved type) and,
    optionally, batched SIMD evaluation of comprehension bodies.
-4. **Fabric node integration (done, in the app):** an adapter maps `EngineValue`
-   ↔ node port values, dynamic typed ports are derived from the compiled
-   interface, the expression is serialized, and the Math Expression node is
-   migrated onto the engine (the array math-expression nodes were removed).
-   Remaining polish: render diagnostics inline at their `line:column` in a source
-   editor — the node currently lists them.
-5. **Additional polish:** parser error recovery that reports every error in one
+3. **Additional polish:** parser error recovery that reports every error in one
    pass, machine-applyable fix hints on diagnostics, and support for stateful
    (feedback) bindings that persist across evaluations.

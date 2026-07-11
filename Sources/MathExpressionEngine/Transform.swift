@@ -14,8 +14,9 @@
 //  operators; the builders and quaternion formulas keep their explicit,
 //  column-major / (x,y,z,w) definitions so behaviour is identical to before.
 //
-//  Scope note: general 4×4 `inverse` and quaternion `slerp` are available from
-//  simd (`.inverse`, `simd_slerp`) but not yet exposed in the language.
+//  General 4×4 `inverse`, quaternion `slerp`, a right-handed `lookAt` view
+//  matrix, and Euler-angle quaternion construction round out the algebra; the
+//  first two delegate to simd (`.inverse`, `simd_slerp`).
 //
 
 import Foundation
@@ -32,6 +33,7 @@ public typealias Quat = simd_quatf
           a.z * b.x - a.x * b.z,
           a.x * b.y - a.y * b.x)
 }
+@inline(__always) func dot3(_ a: SIMD3<Float>, _ b: SIMD3<Float>) -> Float { a.x * b.x + a.y * b.y + a.z * b.z }
 @inline(__always) func length3(_ v: SIMD3<Float>) -> Float { (v.x * v.x + v.y * v.y + v.z * v.z).squareRoot() }
 @inline(__always) func normalize3(_ v: SIMD3<Float>) -> SIMD3<Float> {
     let l = length3(v)
@@ -86,6 +88,22 @@ extension Mat4 {
     static func compose(position: SIMD3<Float>, rotation: Quat, scale: SIMD3<Float>) -> Mat4 {
         translation(position).mul(rotation.matrix).mul(scaling(scale))
     }
+
+    /// Right-handed view matrix — world → camera, looking from `eye` toward
+    /// `center` with -Z forward and `up` giving roll (OpenGL / GLM convention).
+    /// `inverse(lookAt(eye, center, up))` is the object-placement transform that
+    /// sits at `eye` oriented to face `center`.
+    static func lookAt(eye: SIMD3<Float>, center: SIMD3<Float>, up: SIMD3<Float>) -> Mat4 {
+        let f = normalize3(center - eye)      // forward
+        let s = normalize3(cross3(f, up))     // right
+        let u = cross3(s, f)                  // true up
+        return Mat4(columns: (
+            SIMD4(s.x, u.x, -f.x, 0),
+            SIMD4(s.y, u.y, -f.y, 0),
+            SIMD4(s.z, u.z, -f.z, 0),
+            SIMD4(-dot3(s, eye), -dot3(u, eye), dot3(f, eye), 1)
+        ))
+    }
 }
 
 // MARK: - Quat (simd_quatf)
@@ -106,6 +124,18 @@ extension Quat {
         let half = angle * 0.5
         let s = sin(half)
         return Quat(ix: a.x * s, iy: a.y * s, iz: a.z * s, r: cos(half))
+    }
+
+    /// Spherical linear interpolation between two rotations (delegates to simd).
+    static func slerp(_ a: Quat, _ b: Quat, _ t: Float) -> Quat { simd_slerp(a, b, t) }
+
+    /// Rotation from XYZ Euler angles in radians, applied X then Y then Z — i.e.
+    /// equivalent to the matrix product `rotateZ(z)·rotateY(y)·rotateX(x)`.
+    static func euler(_ angles: SIMD3<Float>) -> Quat {
+        let qx = axisAngle(angles.x, SIMD3(1, 0, 0))
+        let qy = axisAngle(angles.y, SIMD3(0, 1, 0))
+        let qz = axisAngle(angles.z, SIMD3(0, 0, 1))
+        return qz.mul(qy).mul(qx)
     }
 
     /// Hamilton product self·other. Explicit to pin the (x,y,z,w) convention.

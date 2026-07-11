@@ -72,6 +72,56 @@ import Testing
         #expect(approxVec3(try value(src), 0, 1, 0))
     }
 
+    @Test func inverseUndoesTransform() throws {
+        // inverse(T) * T == identity, so it round-trips a point back.
+        let src = "let t = translate(vec3(3, -4, 5)) * rotateY(0.9); transformPoint(inverse(t) * t, vec3(2, 7, -1))"
+        #expect(approxVec3(try value(src), 2, 7, -1))
+    }
+
+    @Test func inverseOutputType() {
+        #expect(compile("inverse(rotateX(0.3))").interface.outputType == .transform)
+    }
+
+    @Test func lookAtLooksAlongForward() throws {
+        // Camera at origin looking down -Z: a point one unit ahead (at -Z) lands
+        // on the camera's -Z axis with the expected depth (view space).
+        let src = "transformPoint(lookAt(vec3(0, 0, 0), vec3(0, 0, -1), vec3(0, 1, 0)), vec3(0, 0, -5))"
+        #expect(approxVec3(try value(src), 0, 0, -5))
+    }
+
+    @Test func lookAtInverseIsCameraPlacement() throws {
+        // inverse(view) maps the camera origin back to the eye position.
+        let src = "transformPoint(inverse(lookAt(vec3(2, 3, 4), vec3(0, 0, 0), vec3(0, 1, 0))), vec3(0, 0, 0))"
+        #expect(approxVec3(try value(src), 2, 3, 4))
+    }
+
+    @Test func lookAtOutputType() {
+        #expect(compile("lookAt(vec3(0,0,5), vec3(0,0,0), vec3(0,1,0))").interface.outputType == .transform)
+    }
+
+    @Test func quatEulerMatchesRotationMatrix() throws {
+        // quatEuler(x,y,z) == rotateZ(z)·rotateY(y)·rotateX(x) applied to a vector.
+        let euler = "rotate(quatEuler(vec3(0.3, -0.7, 1.1)), vec3(1, 2, 3))"
+        let matrix = "transformDir(rotateZ(1.1) * rotateY(-0.7) * rotateX(0.3), vec3(1, 2, 3))"
+        let e = try value(euler).components
+        #expect(approxComponents(try value(matrix), Array(e)))
+    }
+
+    @Test func slerpEndpoints() throws {
+        // t=0 and t=1 return the endpoints; midpoint of two 0°/90°-about-Y
+        // rotations is 45°, taking (1,0,0) to (cos45°, 0, -sin45°).
+        let a = "quatAxisAngle(0, vec3(0, 1, 0))"
+        let b = "quatAxisAngle(pi / 2, vec3(0, 1, 0))"
+        #expect(approxVec3(try value("slerp(\(a), \(b), 0) * vec3(1, 0, 0)"), 1, 0, 0))
+        #expect(approxVec3(try value("slerp(\(a), \(b), 1) * vec3(1, 0, 0)"), 0, 0, -1))
+        let mid = Float(2).squareRoot() / 2
+        #expect(approxVec3(try value("slerp(\(a), \(b), 0.5) * vec3(1, 0, 0)"), mid, 0, -mid))
+    }
+
+    @Test func slerpOutputType() {
+        #expect(compile("slerp(quatAxisAngle(0, vec3(0,1,0)), quatAxisAngle(1, vec3(0,1,0)), t)").interface.outputType == .quat)
+    }
+
     @Test func transformArrayComprehensionDrivesInstances() throws {
         // Representative target: an array of transforms (feeds InstancedMesh).
         let r = compile("[translate(vec3(i, 0, 0)) for i in 0..<n]")
@@ -102,6 +152,19 @@ import Testing
 
     @Test func transformPlusTransformIsError() {
         let r = compile("identity() + identity()")
+        #expect(!r.isValid)
+        #expect(r.diagnostics.contains { $0.code == .typeMismatch })
+    }
+
+    @Test func inverseOfQuatIsError() {
+        // inverse is transform-only; a quat should be rejected (use conjugate).
+        let r = compile("inverse(quatAxisAngle(1, vec3(0, 1, 0)))")
+        #expect(!r.isValid)
+        #expect(r.diagnostics.contains { $0.code == .typeMismatch })
+    }
+
+    @Test func slerpWithNonQuatIsError() {
+        let r = compile("slerp(vec3(0, 0, 0), quatAxisAngle(1, vec3(0, 1, 0)), 0.5)")
         #expect(!r.isValid)
         #expect(r.diagnostics.contains { $0.code == .typeMismatch })
     }
