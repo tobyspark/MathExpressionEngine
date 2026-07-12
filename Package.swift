@@ -10,8 +10,17 @@ let package = Package(
     products: [
         .library(name: "MathExpressionEngine", targets: ["MathExpressionEngine"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/bradhowes/swift-math-parser", exact: "3.7.3"),
+    ],
     targets: [
         .target(name: "MathExpressionEngine"),
-        .testTarget(name: "MathExpressionEngineTests", dependencies: ["MathExpressionEngine"]),
+        .testTarget(
+            name: "MathExpressionEngineTests",
+            dependencies: [
+                "MathExpressionEngine",
+                .product(name: "MathParser", package: "swift-math-parser"),
+            ]
+        ),
     ]
 )
