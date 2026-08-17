@@ -42,4 +42,30 @@ import Testing
         }
         #expect(out == m)
     }
+
+    /// Every `EvalError` case describes itself. Missing this, a host reporting
+    /// an evaluation failure gets Foundation's "The operation couldn't be
+    /// completed. (…error 0.)" placeholder, which names neither the case nor
+    /// its payload.
+    @Test(arguments: [EvalError.notCompiled,
+                      .missingInput("x"),
+                      .indexOutOfBounds(index: 4, count: 3),
+                      .limitExceeded("comprehension produced 9000 elements (max 4096)")])
+    func evalErrorsDescribeThemselves(_ error: EvalError) {
+        let description = error.localizedDescription
+        #expect(error.errorDescription != nil)
+        #expect(!description.contains("couldn"), "fell back to Foundation's placeholder: \(description)")
+        #expect(!description.contains("EvalError"), "fell back to Foundation's placeholder: \(description)")
+    }
+
+    /// The payloads are what make a failure actionable, so they have to reach
+    /// the text.
+    @Test func evalErrorDescriptionsCarryTheirPayload() {
+        #expect(EvalError.missingInput("gain").localizedDescription.contains("gain"))
+
+        let bounds = EvalError.indexOutOfBounds(index: 4, count: 3).localizedDescription
+        #expect(bounds.contains("4") && bounds.contains("3"))
+
+        #expect(EvalError.limitExceeded("too many elements").localizedDescription.contains("too many elements"))
+    }
 }

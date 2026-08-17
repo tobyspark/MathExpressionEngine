@@ -5,6 +5,8 @@
 //  The public surface consumed by the Fabric Math Expression node.
 //
 
+import Foundation
+
 /// A source range: a start offset (in characters) and a length.
 public struct Span: Equatable, Sendable {
     public let start: Int
@@ -215,6 +217,27 @@ public enum EvalError: Error, Equatable, Sendable {
     case missingInput(String)
     case indexOutOfBounds(index: Int, count: Int)
     case limitExceeded(String)
+}
+
+extension EvalError: LocalizedError {
+    /// Every case carries a description. Without one, `localizedDescription`
+    /// falls back to "The operation couldn't be completed. (…EvalError error
+    /// 0.)", which names neither the case nor its payload — callers reporting
+    /// an evaluation failure to a user have nothing to show, and any that try
+    /// to classify the failure from its text get no stable string to work
+    /// with. Switch over the case for that; the text is for reading.
+    public var errorDescription: String? {
+        switch self {
+        case .notCompiled:
+            return "The expression has not compiled, so it cannot be evaluated."
+        case .missingInput(let name):
+            return "No value supplied for input `\(name)`."
+        case .indexOutOfBounds(let index, let count):
+            return "Index \(index) is out of bounds for \(count) element\(count == 1 ? "" : "s")."
+        case .limitExceeded(let detail):
+            return "Limit exceeded: \(detail)."
+        }
+    }
 }
 
 /// A compiled program: its derived interface, any diagnostics, and — when it
